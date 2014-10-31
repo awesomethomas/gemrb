@@ -18,33 +18,31 @@
  *
  */
 
-#include "GUI/TextArea.h"
+#include <list>
 
-#include "GUI/GameControl.h"
+#include "TextArea.h"
 
 #include "win32def.h"
 
 #include "DialogHandler.h"
 #include "GameData.h"
 #include "ImageMgr.h"
-#include "Interface.h"
-#include "Palette.h"
-#include "Variables.h"
 #include "Video.h"
 #include "GUI/EventMgr.h"
+#include "GUI/GameControl.h"
 #include "GUI/Window.h"
 #include "Scriptable/Actor.h"
 
-#include <cstdio>
-#include <cstdlib>
-
 namespace GemRB {
 
-TextArea::TextArea(Color hitextcolor, Color initcolor, Color lowtextcolor)
+TextArea::TextArea(const Region& frame, Color hitextcolor, Color initcolor, Color lowtextcolor)
+	: Control(frame)
 {
+	ControlType = IE_GUI_TEXTAREA;
 	keeplines = 100;
 	rows = 0;
 	TextYPos = 0;
+	ticks = starttime = 0;
 	startrow = 0;
 	minrow = 0;
 	Cursor = NULL;
@@ -64,12 +62,7 @@ TextArea::TextArea(Color hitextcolor, Color initcolor, Color lowtextcolor)
 	tmp.g = 152;
 	tmp.b = 102;
 	lineselpal = core->CreatePalette( tmp, lowtextcolor );
-	InternalFlags = TA_INITIALS;
-	//Drop Capitals means initials on!
-	core->GetDictionary()->Lookup("Drop Capitals", InternalFlags);
-	if (InternalFlags) {
-		InternalFlags = TA_INITIALS;
-	}
+	ftext = finit = NULL;
 }
 
 TextArea::~TextArea(void)
@@ -101,65 +94,49 @@ void TextArea::RefreshSprite(const char *portrait)
 	SetAnimPicture ( im->GetSprite2D() );
 }
 
-void TextArea::Draw(unsigned short x, unsigned short y)
+bool TextArea::NeedsDraw()
 {
-	/** Don't come back recursively */
-	if (InternalFlags&TA_BITEMYTAIL) {
+	if (Flags&IE_GUI_TEXTAREA_SMOOTHSCROLL) {
+		if (startrow == rows) { // the text is offscreen
+			return false;
+		}
+		MarkDirty();
+		return true;
+	}
+	return Control::NeedsDraw();
+}
+
+void TextArea::DrawInternal(Region& clip)
+{
+	if (lines.size() == 0) {
 		return;
 	}
-	int tx=x+XPos;
-	int ty=y+YPos;
-	Region clip( tx, ty, Width, Height );
-	Video *video = core->GetVideoDriver();
 
+	Video *video = core->GetVideoDriver();
 	if (Flags&IE_GUI_TEXTAREA_SPEAKER) {
 		if (AnimPicture) {
-			video->BlitSprite(AnimPicture, tx,ty, true, &clip);
+			video->BlitSprite(AnimPicture, clip.x, clip.y, true, &clip);
 			clip.x+=AnimPicture->Width;
 			clip.w-=AnimPicture->Width;
 		}
 	}
 
-	//this might look better in GlobalTimer
-	//or you might want to change the animated button to work like this
-	if (Flags &IE_GUI_TEXTAREA_SMOOTHSCROLL)
+	if (Flags&IE_GUI_TEXTAREA_SMOOTHSCROLL)
 	{
-		unsigned long thisTime;
-
-		thisTime = GetTickCount();
+		unsigned long thisTime = GetTickCount();
 		if (thisTime>starttime) {
 			starttime = thisTime+ticks;
-
 			TextYPos++;// can't use ScrollToY
 			if (TextYPos % ftext->maxHeight == 0) SetRow(startrow + 1);
-
-			/** Forcing redraw of whole screen before drawing text*/
-			Owner->Invalidate();
-			InternalFlags |= TA_BITEMYTAIL;
-			Owner->DrawWindow();
-			InternalFlags &= ~TA_BITEMYTAIL;
 		}
 	}
-
-	if (!Changed && !(Owner->Flags&WF_FLOAT) ) {
-		return;
-	}
-	Changed = false;
-
-	if (XPos == 65535) {
-		return;
-	}
-
-	if (lines.size() == 0) {
-		return;
-	}
-	size_t linesize = lines.size() - 1; // -1 because 0 counts
 
 	//if textarea is 'selectable' it actually means, it is a listbox
 	//in this case the selected value equals the line number
 	//if it is 'not selectable' it can still have selectable lines
 	//but then it is like the dialog window in the main game screen:
 	//the selected value is encoded into the line
+	size_t linesize = lines.size() - 1; // -1 because 0 counts
 	if (!(Flags & IE_GUI_TEXTAREA_SELECTABLE) ) {
 		char* Buffer = (char *) malloc( 1 );
 		Buffer[0] = 0;
@@ -202,7 +179,6 @@ void TextArea::Draw(unsigned short x, unsigned short y)
 				Buffer[lastlen] = 0;
 			}
 		}
-		video->SetClipRect( &clip );
 
 		int pos;
 
@@ -221,15 +197,6 @@ void TextArea::Draw(unsigned short x, unsigned short y)
 							 ( unsigned char * ) Buffer, palette,
 							 IE_FONT_ALIGN_LEFT, finit, Cursor, pos );
 		free( Buffer );
-		video->SetClipRect( NULL );
-
-		if ((Flags &IE_GUI_TEXTAREA_SMOOTHSCROLL)
-			&& linesize <= (size_t)(1 + (Height - 1) / ftext->maxHeight)) {
-			// streaming text: keep pushing newlines until we have an entire areas worth of them.
-			// this way it will appear that the text scrolls out of view
-			AppendText("\n", -1);
-		}
-
 		return;
 	}
 	// normal scrolling textarea
@@ -237,7 +204,7 @@ void TextArea::Draw(unsigned short x, unsigned short y)
 	int sr = startrow;
 	unsigned int i;
 	int yl;
-	for (i = 0; i < linesize; i++) {
+	for (i = 0; i <= linesize; i++) {
 		if (rc + lrows[i] <= sr) {
 			rc += lrows[i];
 			continue;
@@ -258,7 +225,7 @@ void TextArea::Draw(unsigned short x, unsigned short y)
 		clip.h-=yl;
 		break;
 	}
-	for (i++; i < linesize; i++) {
+	for (i++; i <= linesize; i++) {
 		Palette* pal = NULL;
 		if (seltext == (int) i)
 			pal = selected;
@@ -313,7 +280,6 @@ void TextArea::SetMinRow(bool enable)
 	} else {
 		minrow = 0;
 	}
-	Changed = true;
 }
 
 //drop lines scrolled out at the top.
@@ -421,7 +387,6 @@ void TextArea::UpdateControls()
 	int pos;
 
 	CalcRowCount();
-	Changed = true;
 	if (sb) {
 		ScrollBar* bar = ( ScrollBar* ) sb;
 		if (Flags & IE_GUI_TEXTAREA_AUTOSCROLL)
@@ -457,7 +422,7 @@ void TextArea::SetFonts(Font* init, Font* text)
 {
 	finit = init;
 	ftext = text;
-	Changed = true;
+	MarkDirty();
 }
 
 /** Key Press Event */
@@ -465,8 +430,7 @@ bool TextArea::OnKeyPress(unsigned char Key, unsigned short /*Mod*/)
 {
 	if (Flags & IE_GUI_TEXTAREA_EDITABLE) {
 		if (Key >= 0x20) {
-			Owner->Invalidate();
-			Changed = true;
+			MarkDirty();
 			int len = GetRowLength(CurLine);
 			//print("len: %d Before: %s", len, lines[CurLine]);
 			lines[CurLine] = (char *) realloc( lines[CurLine], len + 2 );
@@ -488,7 +452,7 @@ bool TextArea::OnKeyPress(unsigned char Key, unsigned short /*Mod*/)
 		return false;
 	GameControl *gc = core->GetGameControl();
 	if (gc && (gc->GetDialogueFlags()&DF_IN_DIALOG) ) {
-		Changed = true;
+		MarkDirty();
 		seltext=minrow-1;
 		if ((unsigned int) seltext>=lines.size()) {
 			return true;
@@ -524,8 +488,7 @@ bool TextArea::OnSpecialKeyPress(unsigned char Key)
 	if (!(Flags&IE_GUI_TEXTAREA_EDITABLE)) {
 		return false;
 	}
-	Owner->Invalidate();
-	Changed = true;
+	MarkDirty();
 	switch (Key) {
 		case GEM_HOME:
 			CurPos = 0;
@@ -688,17 +651,17 @@ void TextArea::ScrollToY(unsigned long y, Control* sender)
 /** Set Starting Row */
 void TextArea::SetRow(int row)
 {
-	if (row < rows) {
+	if (row <= rows) {
 		startrow = row;
 		TextYPos = row * ftext->maxHeight;
 	}
-	Changed = true;
+	MarkDirty();
 }
 
 void TextArea::CalcRowCount()
 {
 	int tr;
-	int w = Width;
+	size_t w = Width;
 
 	if (Flags&IE_GUI_TEXTAREA_SPEAKER) {
 		const char *portrait = NULL;
@@ -727,7 +690,7 @@ void TextArea::CalcRowCount()
 //			rows++;
 			tr = 0;
 			ieWord* tmp = NULL;
-			size_t len = (int)ftext->GetDoubleByteString((unsigned char*)lines[i], tmp);
+			size_t len = ftext->GetDoubleByteString((unsigned char*)lines[i], tmp);
 			ftext->SetupString( tmp, w );
 			for (size_t p = 0; p <= len; p++) {
 				if (( tmp[p] ) == '[') {
@@ -805,14 +768,14 @@ void TextArea::OnMouseOver(unsigned short /*x*/, unsigned short y)
 		row += lrows[i];
 		if (r < ( row - startrow )) {
 			if (seltext != (int) i)
-				Changed = true;
+				MarkDirty();
 			seltext = ( int ) i;
 			//print("CtrlId = 0x%08lx, seltext = %d, rows = %d, row = %d, r = %d", ControlID, i, rows, row, r);
 			return;
 		}
 	}
 	if (seltext != -1) {
-		Changed = true;
+		MarkDirty();
 	}
 	seltext = -1;
 	//print("CtrlId = 0x%08lx, seltext = %d, rows %d, row %d, r = %d", ControlID, seltext, rows, row, r);
@@ -827,7 +790,7 @@ void TextArea::OnMouseUp(unsigned short x, unsigned short y, unsigned short Butt
 
 	if ((x < Width) && (y < Height - 5) && (seltext != -1)) {
 		Value = (unsigned int) seltext;
-		Changed = true;
+		MarkDirty();
 		if (strnicmp( lines[seltext], "[s=", 3 ) == 0) {
 			if (minrow > seltext)
 				return;
@@ -879,7 +842,7 @@ void TextArea::UpdateState(const char* VariableName, unsigned int Sum)
 		return;
 	}
 	Value = Sum;
-	Changed = true;
+	MarkDirty();
 }
 
 void TextArea::SelectText(const char *select)
@@ -896,25 +859,22 @@ void TextArea::SelectText(const char *select)
 			}
 			UpdateState(VarName, i);
 			CalcRowCount();
-			Owner->Invalidate();
 			core->RedrawAll();
 			break;
 		}
 	}
 }
 
-const char* TextArea::QueryText()
+const char* TextArea::QueryText() const
 {
 	if ( Value<lines.size() ) {
 		return ( const char * ) lines[Value];
 	}
-	return ( const char *) "";
+	return "";
 }
 
 bool TextArea::SetEvent(int eventType, EventHandler handler)
 {
-	Changed = true;
-
 	switch (eventType) {
 	case IE_GUI_TEXTAREA_ON_CHANGE:
 		TextAreaOnChange = handler;
@@ -996,11 +956,9 @@ void TextArea::OnMouseDown(unsigned short /*x*/, unsigned short /*y*/, unsigned 
 		switch(Button) {
 		case GEM_MB_SCRLUP:
 			scrlbr->ScrollUp();
-			core->RedrawAll();
 			break;
 		case GEM_MB_SCRLDOWN:
 			scrlbr->ScrollDown();
-			core->RedrawAll();
 			break;
 		}
 	}
@@ -1012,6 +970,18 @@ void TextArea::SetFocus(bool focus)
 	if (hasFocus && Flags & IE_GUI_TEXTAREA_EDITABLE) {
 		core->GetVideoDriver()->ShowSoftKeyboard();
 	}
+}
+
+static bool charSorter(const char *a, const char *b) {
+	return stricmp(a, b) < 0;
+}
+
+void TextArea::SortText()
+{
+	std::list<char*> sorter(lines.begin(), lines.end());
+	sorter.sort(charSorter);
+	lines.assign(sorter.begin(), sorter.end());
+	CalcRowCount();
 }
 
 }

@@ -20,6 +20,7 @@
 # LUCommon.py - common functions related to leveling up
 
 import GemRB
+import GameCheck
 import GUICommon
 import CommonTables
 from ie_stats import *
@@ -76,9 +77,12 @@ def CanLevelUp(actor):
 def _SetupLevels (pc, Level, offset=0, noclass=0):
 	#storing levels as an array makes them easier to deal with
 	if not Level:
-		Levels = [GemRB.GetPlayerStat (pc, IE_LEVEL)+offset, \
-			GemRB.GetPlayerStat (pc, IE_LEVEL2)+offset, \
-			GemRB.GetPlayerStat (pc, IE_LEVEL3)+offset]
+		Levels = [IE_LEVEL, IE_LEVEL2, IE_LEVEL3]
+		if GameCheck.IsIWD2():
+			Levels = [IE_LEVELBARBARIAN, IE_LEVELBARD, IE_LEVELCLERIC, IE_LEVELDRUID, \
+				IE_LEVEL, IE_LEVELMONK, IE_LEVELPALADIN, IE_LEVELRANGER, IE_LEVEL3, \
+				IE_LEVELSORCERER, IE_LEVEL2]
+		Levels = [ GemRB.GetPlayerStat (pc, l)+offset for l in Levels ]
 	else:
 		Levels = []
 		for level in Level:
@@ -276,6 +280,12 @@ def SetupHP (pc, Level=None, LevelDiff=None):
 		#if Level and LevelDiff are passed, we assume it is correct
 		if GUICommon.IsDualSwap(pc) and not Level and not LevelDiff:
 			LevelDiffs = [LevelDiffs[1], LevelDiffs[0], LevelDiffs[2]]
+	elif GameCheck.IsIWD2():
+		Class = [0]*len(Levels)
+		for c in range(len(Levels)):
+			if Levels[c] > 0:
+				# level stats are implicitly keyed by class id
+				Class[c] = c + 1
 	if NumClasses>len(Levels):
 		return
 
@@ -295,7 +305,14 @@ def SetupHP (pc, Level=None, LevelDiff=None):
 	OldHP = GemRB.GetPlayerStat (pc, IE_MAXHITPOINTS, 1)
 	CurrentHP = 0
 	Divisor = float (NumClasses)
+	if GameCheck.IsIWD2():
+		# hack around so we can reuse more of the main loop
+		NumClasses = len(Levels)
+		Divisor = 1.0
 	for i in range (NumClasses):
+		if GameCheck.IsIWD2() and not Class[i]:
+			continue
+
 		#check this classes hp table for any gain
 		if not ClassName or NumClasses > 1:
 			ClassName = GUICommon.GetClassRowName (Class[i], "class")
@@ -330,7 +347,7 @@ def SetupHP (pc, Level=None, LevelDiff=None):
 			# BUT when we do roll, constitution gives a kind of a luck bonus to the roll
 			if rolls:
 				if GemRB.GetVar ("Difficulty Level") >= 3 and not GemRB.GetVar ("Maximum HP") \
-				and not (GUICommon.GameIsBG1() and LowLevel == 0) and MinRoll < sides:
+				and not (GameCheck.IsBG1() and LowLevel == 0) and MinRoll < sides:
 					if MinRoll > 1:
 						roll = GemRB.Roll (rolls, sides, bonus)
 						if roll-bonus < MinRoll:
@@ -357,7 +374,7 @@ def SetupHP (pc, Level=None, LevelDiff=None):
 def ApplyFeats(MyChar):
 
 	#don't mess with feats outside of IWD2
-	if not GUICommon.GameIsIWD2():
+	if not GameCheck.IsIWD2():
 		return
 
 	#feats giving a single innate ability

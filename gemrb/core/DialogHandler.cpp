@@ -75,7 +75,7 @@ bool DialogHandler::InitDialog(Scriptable* spk, Scriptable* tgt, const char* dlg
 	dlg = dm->GetDialog();
 
 	if (!dlg) {
-		Log(ERROR, "GameControl", "Cannot start dialog: %s", dlgref);
+		Log(ERROR, "DialogHandler", "Cannot start dialog: %s", dlgref);
 		return false;
 	}
 
@@ -104,11 +104,9 @@ bool DialogHandler::InitDialog(Scriptable* spk, Scriptable* tgt, const char* dlg
 		return false;
 
 	Video *video = core->GetVideoDriver();
-	Region vp = video->GetViewport();
 	//allow mouse selection from dialog (even though screen is locked)
 	video->SetMouseEnabled(true);
-	core->timer->SetMoveViewPort( tgt->Pos.x, tgt->Pos.y, 0, true );
-	video->MoveViewportTo( tgt->Pos.x-vp.w/2, tgt->Pos.y-vp.h/2 );
+	gc->MoveViewportTo(tgt->Pos.x, tgt->Pos.y, true);
 
 	//check if we are already in dialog
 	if (gc->GetDialogueFlags()&DF_IN_DIALOG) {
@@ -281,20 +279,15 @@ void DialogHandler::DialogChoose(unsigned int choose)
 			// executing actions directly does not work, because dialog
 			// needs to end before final actions are executed due to
 			// actions making new dialogs!
-			if (target->Type == ST_ACTOR) ((Movable *)target)->ClearPath(); // fuzzie added this
-				target->ClearActions();
+			target->Stop();
 
 			// do not interrupt during dialog actions (needed for aerie.d polymorph block)
-			char buf[20];
-			strcpy(buf, "BreakInstants()");
-			target->AddAction( GenerateAction( buf ) );
-			strcpy(buf, "SetInterrupt(FALSE)");
-			target->AddAction( GenerateAction( buf ) );
+			target->AddAction( GenerateAction( "BreakInstants()" ) );
+			target->AddAction( GenerateAction( "SetInterrupt(FALSE)" ) );
 			for (unsigned int i = 0; i < tr->actions.size(); i++) {
 				target->AddAction(tr->actions[i]);
 			}
-			strcpy(buf, "SetInterrupt(TRUE)");
-			target->AddAction( GenerateAction( buf ) );
+			target->AddAction( GenerateAction( "SetInterrupt(TRUE)" ) );
 		}
 
 		int final_dialog = tr->Flags & IE_DLG_TR_FINAL;

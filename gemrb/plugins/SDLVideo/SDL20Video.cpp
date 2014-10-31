@@ -191,6 +191,9 @@ void SDL20VideoDriver::DestroyMovieScreen()
 	Uint32 format = SDL_PIXELFORMAT_ABGR8888;
 	//SDL_GetWindowPixelFormat(window);
 	screenTexture = SDL_CreateTexture(renderer, format, SDL_TEXTUREACCESS_STREAMING, width, height);
+	// destroy any events that took place during the movies
+	SDL_FlushEvents(SDL_FIRSTEVENT, SDL_LASTEVENT);
+	SDL_RenderClear(renderer); // I guess the videos can potentially be a larger size then the game.
 }
 
 void SDL20VideoDriver::showFrame(unsigned char* buf, unsigned int bufw,
@@ -200,8 +203,8 @@ void SDL20VideoDriver::showFrame(unsigned char* buf, unsigned int bufw,
 {
 	assert( bufw == w && bufh == h );
 
-	SDL_Rect srcRect = {sx, sy, w, h};
-	SDL_Rect destRect = {dstx, dsty, w, h};
+	SDL_Rect srcRect = {(int)sx, (int)sy, (int)w, (int)h};
+	SDL_Rect destRect = {(int)dstx, (int)dsty, (int)w, (int)h};
 
 	Uint32 *dst;
 	unsigned int row, col;
@@ -247,18 +250,20 @@ void SDL20VideoDriver::showFrame(unsigned char* buf, unsigned int bufw,
 	}
 	SDL_UnlockTexture(screenTexture);
 
-	SDL_Rect rect = RectFromRegion(subtitleregion);
-	SDL_RenderFillRect(renderer, &rect);
+	SDL_RenderClear(renderer);
 	SDL_RenderCopy(renderer, screenTexture, &srcRect, &destRect);
 
-	if (titleref>0)
+	if (titleref>0) {
+		SDL_Rect rect = RectFromRegion(subtitleregion);
+		SDL_RenderFillRect(renderer, &rect);
 		DrawMovieSubtitle( titleref );
+	}
 
 	SDL_RenderPresent(renderer);
 }
 
 void SDL20VideoDriver::showYUVFrame(unsigned char** buf, unsigned int *strides,
-				  unsigned int /*bufw*/, unsigned int bufh,
+				  unsigned int /*bufw*/, unsigned int /*bufh*/,
 				  unsigned int w, unsigned int h,
 				  unsigned int dstx, unsigned int dsty,
 				  ieDword /*titleref*/)
@@ -268,10 +273,11 @@ void SDL20VideoDriver::showYUVFrame(unsigned char** buf, unsigned int *strides,
 	destRect.y = dsty;
 	destRect.w = w;
 	destRect.h = h;
-
+/*
+ // This is superseded by SDL_UpdateYUVTexture, but I havent throughly tested it.
+ // Not that I expect it to perform worse than the manual code :)
 	Uint8 *pixels;
 	int pitch;
-
 	if(SDL_LockTexture(screenTexture, NULL, (void**)&pixels, &pitch) != GEM_OK) {
 		Log(ERROR, "SDL 2 driver", "Unable to lock video player: %s", SDL_GetError());
 		return;
@@ -310,8 +316,11 @@ void SDL20VideoDriver::showYUVFrame(unsigned char** buf, unsigned int *strides,
 			iV += strides[2];
 		}
 	}
-
 	SDL_UnlockTexture(screenTexture);
+ */
+	SDL_RenderClear(renderer);
+	// FIXME: why do we have to invert the last 2 channels? I dont think the data is in the format we claim...
+	SDL_UpdateYUVTexture(screenTexture, NULL, buf[0], strides[0], buf[2], strides[2], buf[1], strides[1]);
 	SDL_RenderCopy(renderer, screenTexture, NULL, &destRect);
 	SDL_RenderPresent(renderer);
 }
@@ -320,32 +329,37 @@ int SDL20VideoDriver::SwapBuffers(void)
 {
 	int ret = SDLVideoDriver::SwapBuffers();
 
-	void *pixels;
-	int pitch;
+	SDL_UpdateTexture(screenTexture, NULL, backBuf->pixels, backBuf->pitch);
+	/*
+	 Commenting this out because I get better performance (on iOS) with SDL_UpdateTexture
+	 Don't know how universal it is yet so leaving this in commented out just in case
 
-	if(SDL_LockTexture(screenTexture, NULL, &pixels, &pitch) != GEM_OK) {
-		Log(ERROR, "SDL 2 driver", "Unable to lock screen texture: %s", SDL_GetError());
-		return GEM_ERROR;
-	}
+	 void *pixels;
+	 int pitch;
+	 if(SDL_LockTexture(screenTexture, NULL, &pixels, &pitch) != GEM_OK) {
+	 Log(ERROR, "SDL 2 driver", "Unable to lock screen texture: %s", SDL_GetError());
+	 return GEM_ERROR;
+	 }
 
-	ieByte* src = (ieByte*)backBuf->pixels;
-	ieByte* dest = (ieByte*)pixels;
-	for( int row = 0; row < height; row++ ) {
-		memcpy(dest, src, width * backBuf->format->BytesPerPixel);
-		dest += pitch;
-		src += backBuf->pitch;
-	}
+	 ieByte* src = (ieByte*)backBuf->pixels;
+	 ieByte* dest = (ieByte*)pixels;
+	 for( int row = 0; row < height; row++ ) {
+	 memcpy(dest, src, width * backBuf->format->BytesPerPixel);
+	 dest += pitch;
+	 src += backBuf->pitch;
+	 }
+	 SDL_UnlockTexture(screenTexture);
+	 */
 
-/*
-	if (fadeColor.a) {
-		SDL_Rect dst = {
-			xCorr, yCorr, Viewport.w, Viewport.h
-		};
-		SDL_SetRenderDrawColor(renderer, fadeColor.r, fadeColor.g, fadeColor.b, fadeColor.a);
-		SDL_RenderFillRect(renderer, &dst);
-	}
-*/
-	SDL_UnlockTexture(screenTexture);
+	/*
+	 if (fadeColor.a) {
+	 SDL_Rect dst = {
+	 xCorr, yCorr, Viewport.w, Viewport.h
+	 };
+	 SDL_SetRenderDrawColor(renderer, fadeColor.r, fadeColor.g, fadeColor.b, fadeColor.a);
+	 SDL_RenderFillRect(renderer, &dst);
+	 }
+	 */
 	SDL_RenderCopy(renderer, screenTexture, NULL, NULL);
 	SDL_RenderPresent( renderer );
 	return ret;
@@ -674,11 +688,8 @@ int SDL20VideoDriver::ProcessEvent(const SDL_Event & event)
 					 restoring from "minimized state" should be a clean slate.
 					 */
 					ClearFirstTouch();
+					EndMultiGesture();
 					ignoreNextFingerUp = 0;
-					GameControl* gc = core->GetGameControl();
-					if (gc) {
-						gc->ClearMouseState();
-					}
 					// should we reset the lastMouseTime vars?
 #if TARGET_OS_IPHONE
 					// FIXME:
@@ -708,6 +719,15 @@ int SDL20VideoDriver::ProcessEvent(const SDL_Event & event)
 		case SDL_MOUSEBUTTONUP:
 			if (event.button.which == SDL_TOUCH_MOUSEID) {
 				break;
+			}
+		case SDL_KEYDOWN:
+		case SDL_KEYUP:
+			{
+				SDL_Keycode key = SDL_GetKeyFromScancode(event.key.keysym.scancode);
+				if (key > 32 && key < 127) {
+					// ignore keys that generate text. handeled by SDL_TEXTINPUT
+					break;
+				}
 			}
 		default:
 			return SDLVideoDriver::ProcessEvent(event);
@@ -744,7 +764,9 @@ void SDL20VideoDriver::MoveMouse(unsigned int x, unsigned int y)
 
 void SDL20VideoDriver::SetGamma(int brightness, int /*contrast*/)
 {
-	SDL_SetWindowBrightness(window, (float)(brightness/40.0));
+	// FIXME: hardcoded hack. in in Interface our default brigtness value is 10
+	// so we assume that to be "normal" (1.0) value.
+	SDL_SetWindowBrightness(window, (float)brightness/10.0);
 }
 
 bool SDL20VideoDriver::SetFullscreenMode(bool set)
@@ -808,8 +830,10 @@ float SDL20VideoDriver::ScaleCoordinateVertical(float y)
 	return y * height;
 }
 
+#ifndef USE_OPENGL
 #include "plugindef.h"
 
-GEMRB_PLUGIN(0xDBAAB50, "SDL Video Driver")
+GEMRB_PLUGIN(0xDBAAB51, "SDL2 Video Driver")
 PLUGIN_DRIVER(SDL20VideoDriver, "sdl")
 END_PLUGIN()
+#endif

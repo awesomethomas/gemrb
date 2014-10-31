@@ -178,6 +178,12 @@ void Inventory::CalculateWeight() const
 			if (itm) {
 				slot->Weight = itm->Weight;
 				gamedata->FreeItem( itm, slot->ItemResRef, false );
+
+				// some items can't be dropped once they've been picked up,
+				// e.g. the portal key in BG2
+				if (!(slot->Flags & IE_INV_ITEM_MOVABLE)) {
+					slot->Flags |= IE_INV_ITEM_UNDROPPABLE;
+				}
 			} else {
 				Log(ERROR, "Inventory", "Invalid item: %s!", slot->ItemResRef);
 				slot->Weight = 0;
@@ -651,11 +657,11 @@ int Inventory::AddStoreItem(STOItem* item, int action)
 		memcpy( temp, item, sizeof( CREItem ) );
 		//except the Expired flag
 		temp->Expired=0;
-		if (action==STA_STEAL) {
-			temp->Flags |= IE_INV_ITEM_STOLEN;
+		if (action==STA_STEAL && !core->HasFeature(GF_PST_STATE_FLAGS)) {
+			temp->Flags |= IE_INV_ITEM_STOLEN; // "steel" in pst
 		}
 		temp->Flags &= ~IE_INV_ITEM_SELECTED;
-
+		
 		ret = AddSlotItem( temp, SLOT_ONLYINVENTORY );
 		if (ret != ASI_SUCCESS) {
 			delete temp;

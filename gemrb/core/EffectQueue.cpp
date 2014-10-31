@@ -537,8 +537,10 @@ int EffectQueue::AddEffect(Effect* fx, Scriptable* self, Actor* pretarget, const
 
 	if (self) {
 		fx->CasterID = self->GetGlobalID();
-	} else {
-		if (Owner) fx->CasterID = Owner->GetGlobalID();
+		fx->SetSourcePosition(self->Pos);
+	} else if (Owner) {
+		fx->CasterID = Owner->GetGlobalID();
+		fx->SetSourcePosition(Owner->Pos);
 	}
 
 	switch (fx->Target) {
@@ -996,6 +998,48 @@ static int check_type(Actor* actor, Effect* fx)
 	return 1;
 }
 
+// pure magic resistance
+static inline int check_magic_res(Actor *actor, Effect *fx, Actor *caster)
+{
+	//don't resist self
+	bool selective_mr = core->HasFeature(GF_SELECTIVE_MAGIC_RES);
+	if (fx->CasterID == actor->GetGlobalID()) {
+		if (selective_mr) {
+			return 0;
+		}
+	}
+
+	//magic immunity
+	ieDword val = actor->GetStat(IE_RESISTMAGIC);
+	bool resisted = false;
+
+	if (iwd2fx) {
+		// 3ed style check
+		// TODO: check if luck really affects it (i doubt it does)
+		int roll = actor->LuckyRoll(1, 20, 0);
+		ieDword check = fx->CasterLevel + roll;
+		int penetration = 0;
+		// +2/+4 level bonus from the (greater) spell penetration feat
+		if (caster && caster->HasFeat(FEAT_SPELL_PENETRATION)) {
+			penetration += 2 * caster->GetStat(IE_FEAT_SPELL_PENETRATION);
+		}
+		check += penetration;
+		resisted = (signed) check < (signed) val;
+		// ~Spell Resistance check (Spell resistance:) %d vs. (d20 + caster level + spell resistance mod)  = %d + %d + %d.~
+		displaymsg->DisplayRollStringName(39673, DMC_LIGHTGREY, actor, val, roll, fx->CasterLevel, penetration);
+	} else {
+		// 2.5 style check
+		resisted = (signed) fx->random_value < (signed) val;
+	}
+	if (resisted) {
+		// we take care of irresistible spells a few checks above, so selective mr has no impact here anymore
+		displaymsg->DisplayConstantStringName(STR_MAGIC_RESISTED, DMC_WHITE, actor);
+		Log(MESSAGE, "EffectQueue", "effect resisted: %s", (char*) Opcodes[fx->Opcode].Name);
+		return 1;
+	}
+	return 2;
+}
+
 //check resistances, saving throws
 static bool check_resistance(Actor* actor, Effect* fx)
 {
@@ -1030,50 +1074,16 @@ static bool check_resistance(Actor* actor, Effect* fx)
 	}
 */
 
-	//not resistable (no saves either?)
-	if(fx->Resistance != FX_CAN_RESIST_CAN_DISPEL) {
-		return false;
+	//not resistable (but check saves - for chromatic orb instakill)
+	if (fx->Resistance == FX_CAN_RESIST_CAN_DISPEL) {
+		int magic = check_magic_res(actor, fx, caster);
+		if (magic < 2) {
+			return magic;
+		}
 	}
 
 	if (pstflags && (actor->GetSafeStat(IE_STATE_ID) & (STATE_ANTIMAGIC) ) ) {
 		return false;
-	}
-
-	//don't resist self
-	bool selective_mr = core->HasFeature(GF_SELECTIVE_MAGIC_RES);
-	if (fx->CasterID == actor->GetGlobalID()) {
-		if (selective_mr) {
-			return false;
-		}
-	}
-
-	//magic immunity
-	ieDword val = actor->GetStat(IE_RESISTMAGIC);
-	bool resisted = false;
-
-	if (iwd2fx) {
-		// 3ed style check
-		// TODO: check if luck really affects it (i doubt it does)
-		int roll = actor->LuckyRoll(1, 20, 0);
-		ieDword check = fx->CasterLevel + roll;
-		int penetration = 0;
-		// +2/+4 level bonus from the (greater) spell penetration feat
-		if (caster && caster->HasFeat(FEAT_SPELL_PENETRATION)) {
-			penetration += 2 * caster->GetStat(IE_FEAT_SPELL_PENETRATION);
-		}
-		check += penetration;
-		resisted = (signed) check < (signed) val;
-		// ~Spell Resistance check (Spell resistance:) %d vs. (d20 + caster level + spell resistance mod)  = %d + %d + %d.~
-		displaymsg->DisplayRollStringName(39673, DMC_LIGHTGREY, actor, val, roll, fx->CasterLevel, penetration);
-	} else {
-		// 2.5 style check
-		resisted = (signed) fx->random_value < (signed) val;
-	}
-	if (resisted) {
-		// we take care of irresistible spells a few checks above, so selective mr has no impact here anymore
-		displaymsg->DisplayConstantStringName(STR_MAGIC_RESISTED, DMC_WHITE, actor);
-		Log(MESSAGE, "EffectQueue", "effect resisted: %s", (char*) Opcodes[fx->Opcode].Name);
-		return true;
 	}
 
 	//saving throws, bonus can be improved by school specific bonus
@@ -1087,7 +1097,12 @@ static bool check_resistance(Actor* actor, Effect* fx)
 	bool saved = false;
 	for (int i=0;i<5;i++) {
 		if( fx->SavingThrowType&(1<<i)) {
-			saved = actor->GetSavingThrow(i, bonus);
+			// FIXME: first bonus handling for iwd2 is just a guess
+			if (iwd2fx) {
+				saved = actor->GetSavingThrow(i, bonus-fx->SavingThrowBonus, fx->SpellLevel, fx->SavingThrowBonus);
+			} else {
+				saved = actor->GetSavingThrow(i, bonus);
+			}
 			if( saved) {
 				break;
 			}
@@ -1129,10 +1144,7 @@ int EffectQueue::ApplyEffect(Actor* target, Effect* fx, ieDword first_apply, ieD
 
 	if (first_apply) {
 		fx->FirstApply = 1;
-		if( (fx->PosX==0xffffffff) && (fx->PosY==0xffffffff)) {
-			fx->PosX = target->Pos.x;
-			fx->PosY = target->Pos.y;
-		}
+		fx->SetPosition(target->Pos);
 
 		//gemrb specific, stat based chance
 		if ((fx->ProbabilityRangeMin == 100) && Owner && (Owner->Type==ST_ACTOR) ) {

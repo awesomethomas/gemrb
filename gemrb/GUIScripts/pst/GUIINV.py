@@ -1,6 +1,6 @@
 # -*-python-*-
 # GemRB - Infinity Engine Emulator
-# Copyright (C) 2003 The GemRB Project
+# Copyright (C) 2003-2004 The GemRB Project
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -22,14 +22,15 @@
 
 ###################################################
 
-from GUIDefines import *
-from ie_stats import *
-from ie_slots import *
 import GemRB
 import GUICommon
 import CommonTables
 import GUICommonWindows
 import InventoryCommon
+from GUIDefines import *
+from ie_stats import *
+from ie_slots import *
+
 
 InventoryWindow = None
 ItemAmountWindow = None
@@ -65,6 +66,8 @@ ItemHash = {}
 
 
 def OpenInventoryWindow ():
+	"""Opens the inventory window."""
+
 	global AvSlotsTable
 	global InventoryWindow
 
@@ -90,8 +93,8 @@ def OpenInventoryWindow ():
 	# inventory slots
 	for i in range (44):
 		Button = Window.GetControl (i)
-		Button.SetFlags (IE_GUI_BUTTON_ALIGN_RIGHT , OP_OR)
-		Button.SetFont ("NUMBER2")
+		Button.SetFlags (IE_GUI_BUTTON_ALIGN_RIGHT | IE_GUI_BUTTON_ALIGN_BOTTOM, OP_OR)
+		Button.SetFont ("NUMBER")
 		Button.SetVarAssoc ("ItemButton", i)
 		Button.SetBorder (0,0,0,0,0,128,128,255,64,0,1)
 		Button.SetBorder (1,0,0,0,0,255,128,128,64,0,1)
@@ -102,8 +105,8 @@ def OpenInventoryWindow ():
 	for i in range (10):
 		Button = Window.GetControl (i+47)
 		Button.SetVarAssoc ("GroundItemButton", i)
-		Button.SetFlags (IE_GUI_BUTTON_ALIGN_RIGHT , OP_OR)
-		Button.SetFont ("NUMBER2")
+		Button.SetFlags (IE_GUI_BUTTON_ALIGN_RIGHT | IE_GUI_BUTTON_ALIGN_BOTTOM, OP_OR)
+		Button.SetFont ("NUMBER")
 		Button.SetBorder (0,0,0,0,0,128,128,255,64,0,1)
 		Button.SetBorder (1,0,0,0,0,255,128,128,64,0,1)
 		Button.SetEvent (IE_GUI_MOUSE_ENTER_BUTTON, InventoryCommon.MouseEnterGround)
@@ -124,9 +127,9 @@ def OpenInventoryWindow ():
 
 	# encumbrance
 	Button = Window.GetControl (46)
-	Button.SetFont ("NUMBER")
 	Button.SetState (IE_GUI_BUTTON_LOCKED)
 	Button.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_SET)
+	Button.SetFont ('NUMBER')
 
 	# armor class
 	Label = Window.GetControl (0x1000003a)
@@ -154,6 +157,7 @@ def OpenInventoryWindow ():
 	return
 
 def UpdateInventoryWindow ():
+	"""Redraws the inventory window and resets TopIndex."""
 	global ItemHash
 	global slot_list
 
@@ -183,7 +187,10 @@ def UpdateInventoryWindow ():
 		UpdateSlot (pc, i)
 
 def RefreshInventoryWindow ():
+	"""Partial redraw without resetting TopIndex."""
+
 	Window = InventoryWindow
+
 	pc = GemRB.GameGetSelectedPCSingle ()
 
 	# name
@@ -241,6 +248,10 @@ def RefreshInventoryWindow ():
 
 			Button.SetItemIcon (Slot['ItemResRef'])
 			Button.SetFlags (IE_GUI_BUTTON_PICTURE, OP_OR)
+			if item['MaxStackAmount'] > 1:
+				Button.SetText (str (Slot['Usages0']))
+			else:
+				Button.SetText ('')
 			if not identified or item["ItemNameIdentified"] == -1:
 				Button.SetTooltip (item["ItemName"])
 				Button.EnableBorder (0, 1)
@@ -254,6 +265,7 @@ def RefreshInventoryWindow ():
 		else:
 			Button.SetFlags (IE_GUI_BUTTON_PICTURE, OP_NAND)
 			Button.SetTooltip (4273)
+			Button.SetText ('')
 			Button.EnableBorder (0, 0)
 			Button.SetEvent (IE_GUI_BUTTON_ON_PRESS, None)
 			Button.SetEvent (IE_GUI_BUTTON_ON_RIGHT_PRESS, None)

@@ -24,7 +24,7 @@
 
 import GemRB
 import LoadScreen
-import GUICommon
+import GameCheck
 
 LoadWindow = 0
 TextAreaControl = 0
@@ -34,7 +34,7 @@ ScrollBar = 0
 def OnLoad ():
 	global LoadWindow, TextAreaControl, Games, ScrollBar
 
-	if GUICommon.GameIsIWD1():
+	if GameCheck.IsIWD1():
 		GemRB.SetVar ("PlayMode",0)   #iwd is always using 'mpsave'
 		GemRB.SetVar ("SaveDir",1)   #iwd is always using 'mpsave'
 	GemRB.LoadWindowPack ("GUILOAD", 640, 480)
@@ -76,7 +76,7 @@ def OnLoad ():
 	Games=GemRB.GetSaveGames ()
 	TopIndex = max (0, len(Games) - 4)
 	GemRB.SetVar ("TopIndex",TopIndex)
-	ScrollBar.SetVarAssoc ("TopIndex", TopIndex+1)
+	ScrollBar.SetVarAssoc ("TopIndex", TopIndex)
 	ScrollBarPress ()
 	LoadWindow.SetVisible (WINDOW_VISIBLE)
 	return
@@ -132,7 +132,7 @@ def LoadGamePress ():
 	GemRB.LoadGame (Games[Pos])
 
 	#enters game
-	if GUICommon.GameIsIWD1():
+	if GameCheck.IsIWD1():
 		GemRB.SetNextScript ("PartyFormation")
 	else:
 		# it will close windows, including the loadscreen

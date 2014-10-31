@@ -44,6 +44,7 @@
 #include "Video.h"
 #include "WorldMap.h"
 #include "GUI/GameControl.h"
+#include "RNG/RNG_SFMT.h"
 #include "Scriptable/Container.h"
 #include "Scriptable/Door.h"
 #include "Scriptable/InfoPoint.h"
@@ -276,7 +277,7 @@ bool StoreHasItemCore(const ieResRef storename, const ieResRef itemname)
 	return ret;
 }
 
-bool StoreGetItemCore(CREItem &item, const ieResRef storename, const ieResRef itemname, unsigned int count)
+static bool StoreGetItemCore(CREItem &item, const ieResRef storename, const ieResRef itemname, unsigned int count)
 {
 	Store* store = gamedata->GetStore(storename);
 	if (!store) {
@@ -415,7 +416,7 @@ bool HasItemCore(Inventory *inventory, const ieResRef itemname, ieDword flags)
 }
 
 //finds and takes an item from a container in the given inventory
-bool GetItemContainer(CREItem &itemslot2, Inventory *inventory, const ieResRef itemname, int count)
+static bool GetItemContainer(CREItem &itemslot2, Inventory *inventory, const ieResRef itemname, int count)
 {
 	int i=inventory->GetSlotCount();
 	while (i--) {
@@ -537,16 +538,20 @@ int CanSee(Scriptable* Sender, Scriptable* target, bool range, int seeflag)
 
 	if (range) {
 		unsigned int dist;
-
+		bool los = true;
 		if (Sender->Type == ST_ACTOR) {
 			Actor* snd = ( Actor* ) Sender;
 			dist = snd->Modified[IE_VISUALRANGE];
 		} else {
 			dist = 30;
+			los = false;
 		}
 
 		if (Distance(target->Pos, Sender->Pos) > dist * 15) {
 			return 0;
+		}
+		if (!los) {
+			return 1;
 		}
 	}
 
@@ -866,7 +871,7 @@ void EscapeAreaCore(Scriptable* Sender, const Point &p, const char* area, const 
 	Sender->AddActionInFront( action );
 }
 
-void GetTalkPositionFromScriptable(Scriptable* scr, Point &position)
+static void GetTalkPositionFromScriptable(Scriptable* scr, Point &position)
 {
 	switch (scr->Type) {
 		case ST_AREA: case ST_GLOBAL:
@@ -881,7 +886,7 @@ void GetTalkPositionFromScriptable(Scriptable* scr, Point &position)
 				position=((InfoPoint *) scr)->UsePoint;
 				break;
 			}
-			position=((InfoPoint *) scr)->TrapLaunch;
+			position=((InfoPoint *) scr)->TalkPos;
 			break;
 		case ST_DOOR: case ST_CONTAINER:
 			position=((Highlightable *) scr)->TrapLaunch;
@@ -992,19 +997,13 @@ void BeginDialog(Scriptable* Sender, Action* parameters, int Flags)
 
 			if (target->InMove()) {
 				//waiting for target
-				Sender->AddActionInFront( Sender->GetCurrentAction() );
-				Sender->ReleaseCurrentAction();
-				Sender->SetWait(1);
 				return;
 			}
 			GetTalkPositionFromScriptable(scr, TalkPos);
 			if (PersonalDistance(TalkPos, target)>MAX_OPERATING_DISTANCE ) {
 				//try to force the target to come closer???
-				GoNear(target, TalkPos);
-				Sender->AddActionInFront( Sender->GetCurrentAction() );
-				Sender->ReleaseCurrentAction();
-				Sender->SetWait(1);
-				return;
+				if(!MoveNearerTo(target, TalkPos, MAX_OPERATING_DISTANCE, 1))
+					return;
 			}
 		}
 	}
@@ -1116,12 +1115,25 @@ void BeginDialog(Scriptable* Sender, Action* parameters, int Flags)
 
 	//don't clear target's actions, because a sequence like this will be broken:
 	//StartDialog([PC]); SetGlobal("Talked","LOCALS",1);
+	// Update orientation and potentially stance
+	// sarevok's resurrection cutscene shows a need for this (cut206a)
+	// however we do not want to affect lying actors (eg. Malla from tob)
 	if (scr!=tar) {
 		if (scr->Type==ST_ACTOR) {
-			((Actor *) scr)->SetOrientation(GetOrient( tar->Pos, scr->Pos), true);
+			// might not be equal to speaker anymore due to swapping
+			Actor *talker = (Actor *) scr;
+			talker->SetOrientation(GetOrient( tar->Pos, scr->Pos), true);
+			if (talker->InParty) {
+				talker->SetStance(IE_ANI_READY);
+			}
 		}
 		if (tar->Type==ST_ACTOR) {
-			((Actor *) tar)->SetOrientation(GetOrient( scr->Pos, tar->Pos), true);
+			// might not be equal to target anymore due to swapping
+			Actor *talkee = (Actor *) tar;
+			talkee->SetOrientation(GetOrient( scr->Pos, tar->Pos), true);
+			if (talkee->InParty) {
+				talkee->SetStance(IE_ANI_READY);
+			}
 		}
 	}
 
@@ -1706,18 +1718,6 @@ Action* GenerateActionCore(const char *src, const char *str, unsigned short acti
 			src++;
 	}
 	return newAction;
-}
-
-void GoNear(Scriptable *Sender, const Point &p)
-{
-	if (Sender->GetCurrentAction()) {
-		Log(ERROR, "GameScript", "Target busy???");
-		return;
-	}
-	char Tmp[256];
-	sprintf( Tmp, "MoveToPoint([%hd.%hd])", p.x, p.y );
-	Action * action = GenerateAction( Tmp);
-	Sender->AddActionInFront( action );
 }
 
 void MoveNearerTo(Scriptable *Sender, Scriptable *target, int distance, int dont_release)
@@ -2315,7 +2315,7 @@ int GetGroup(Actor *actor)
 	if (actor->GetStat(IE_EA) <= EA_GOODCUTOFF) {
 		type = 1; //PC
 	}
-	if (actor->GetStat(IE_EA) >= EA_EVILCUTOFF) {
+	else if (actor->GetStat(IE_EA) >= EA_EVILCUTOFF) {
 		type = 0;
 	}
 	return type;
@@ -2339,7 +2339,6 @@ Actor *GetNearestEnemyOf(Map *map, Actor *origin, int whoseeswho)
 		ac=map->GetActor(i,true);
 		if (ac == origin) continue;
 
-		int distance = Distance(ac, origin);
 		if (whoseeswho&ENEMY_SEES_ORIGIN) {
 			if (!CanSee(ac, origin, true, GA_NO_DEAD|GA_NO_UNSCHEDULED)) {
 				continue;
@@ -2351,6 +2350,7 @@ Actor *GetNearestEnemyOf(Map *map, Actor *origin, int whoseeswho)
 			}
 		}
 
+		int distance = Distance(ac, origin);
 		if (type) { //origin is PC
 			if (ac->GetStat(IE_EA) >= EA_EVILCUTOFF) {
 				tgts->AddTarget(ac, distance, GA_NO_DEAD|GA_NO_UNSCHEDULED);
@@ -2377,7 +2377,6 @@ Actor *GetNearestOf(Map *map, Actor *origin, int whoseeswho)
 		ac=map->GetActor(i,true);
 		if (ac == origin) continue;
 
-		int distance = Distance(ac, origin);
 		if (whoseeswho&ENEMY_SEES_ORIGIN) {
 			if (!CanSee(ac, origin, true, GA_NO_DEAD|GA_NO_UNSCHEDULED)) {
 				continue;
@@ -2389,6 +2388,7 @@ Actor *GetNearestOf(Map *map, Actor *origin, int whoseeswho)
 			}
 		}
 
+		int distance = Distance(ac, origin);
 		tgts->AddTarget(ac, distance, GA_NO_DEAD|GA_NO_UNSCHEDULED);
 	}
 	ac = (Actor *) tgts->GetTarget(0, ST_ACTOR);
@@ -2425,13 +2425,13 @@ unsigned int GetSpellDistance(const ieResRef spellres, Scriptable *Sender)
 		return 0;
 	}
 	dist = spl->GetCastingDistance(Sender);
+	gamedata->FreeSpell(spl, spellres, false);
+
 	//make possible special return values (like 0xffffffff means the spell doesn't need distance)
 	//this is used with special targeting mode (3)
 	if (dist>0xff000000) {
 		return dist;
 	}
-
-	gamedata->FreeSpell(spl, spellres, false);
 	return dist*9; //FIXME: empirical constant to convert from points to (feet)
 }
 
@@ -2447,13 +2447,13 @@ unsigned int GetItemDistance(const ieResRef itemres, int header)
 		return 0;
 	}
 	dist=itm->GetCastingDistance(header);
+	gamedata->FreeItem(itm, itemres, false);
+
 	//make possible special return values (like 0xffffffff means the item doesn't need distance)
 	//this is used with special targeting mode (3)
 	if (dist>0xff000000) {
 		return dist;
 	}
-
-	gamedata->FreeItem(itm, itemres, false);
 	return dist*15;
 }
 
@@ -2493,7 +2493,7 @@ void SetupWishCore(Scriptable *Sender, int column, int picks)
 		}
 	} else {
 		for(i=0;i<picks;i++) {
-			selects[i]=rand()%count;
+			selects[i]=RAND(0, count-1);
 retry:
 			for(j=0;j<i;j++) {
 				if(selects[i]==selects[j]) {
@@ -2583,43 +2583,25 @@ Gem_Polygon *GetPolygon2DA(ieDword index)
 	return polygons[index];
 }
 
-inline static bool InterruptSpellcasting(Scriptable* Sender) {
+static bool InterruptSpellcasting(Scriptable* Sender) {
 	if (Sender->Type != ST_ACTOR) return false;
 	Actor *caster = (Actor *) Sender;
 
 	// ouch, we got hit
 	if (Sender->InterruptCasting) {
-		int roll = 0;
-
-		// iwd2 does an extra concentration check first:
-		// d20 + Concentration Skill Level + Constitution bonus (+4 Combat casting feat) >= 15 + spell level
-		if (core->HasFeature(GF_3ED_RULES)) {
-			roll = core->Roll(1, 20, 0); // TODO: check if the original does a lucky roll
-			roll += caster->GetStat(IE_CONCENTRATION);
-			roll += caster->GetAbilityBonus(IE_CON);
-			if (caster->HasFeat(FEAT_COMBAT_CASTING)) {
-				roll += 4;
-			}
-			Spell* spl = gamedata->GetSpell(Sender->SpellResRef, true);
-			if (!spl) return false;
-			roll -= spl->SpellLevel;
-			gamedata->FreeSpell(spl, Sender->SpellResRef, false);
+		if (caster->InParty) {
+			displaymsg->DisplayConstantString(STR_SPELLDISRUPT, DMC_WHITE, Sender);
+		} else {
+			displaymsg->DisplayConstantStringName(STR_SPELL_FAILED, DMC_WHITE, Sender);
 		}
-		if (roll < 15) {
-			if (caster->InParty) {
-				displaymsg->DisplayConstantString(STR_SPELLDISRUPT, DMC_WHITE, Sender);
-			} else {
-				displaymsg->DisplayConstantStringName(STR_SPELL_FAILED, DMC_WHITE, Sender);
-			}
-			DisplayStringCore(Sender, VB_SPELL_DISRUPTED, DS_CONSOLE|DS_CONST );
-			return true;
-		}
+		DisplayStringCore(Sender, VB_SPELL_DISRUPTED, DS_CONSOLE|DS_CONST );
+		return true;
 	}
 
 	// abort casting on invisible or dead targets
 	// not all spells should be interrupted on death - some for chunking, some for raising the dead
-	if (Sender->LastTarget) {
-		Actor *target = core->GetGame()->GetActorByGlobalID(Sender->LastTarget);
+	if (Sender->LastSpellTarget) {
+		Actor *target = core->GetGame()->GetActorByGlobalID(Sender->LastSpellTarget);
 		if (target) {
 			ieDword state = target->GetStat(IE_STATE_ID);
 			if (state & STATE_DEAD) {
@@ -2627,15 +2609,15 @@ inline static bool InterruptSpellcasting(Scriptable* Sender) {
 					Spell* spl = gamedata->GetSpell(Sender->SpellResRef, true);
 					if (!spl) return false;
 					SPLExtHeader *seh = spl->GetExtHeader(0); // potentially wrong, but none of the existing spells is problematic
-					if (seh && seh->Target != TARGET_DEAD) {
-						gamedata->FreeSpell(spl, Sender->SpellResRef, false);
+					bool invalidTarget = seh && seh->Target != TARGET_DEAD;
+					gamedata->FreeSpell(spl, Sender->SpellResRef, false);
+					if (invalidTarget) {
 						if (caster->InParty) {
 							core->Autopause(AP_NOTARGET, caster);
 						}
 						caster->SetStance(IE_ANI_READY);
 						return true;
 					}
-					gamedata->FreeSpell(spl, Sender->SpellResRef, false);
 				}
 			}
 		}
@@ -2742,7 +2724,7 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 		return;
 	}
 
-	if (Sender->LastTarget) {
+	if (Sender->LastSpellTarget) {
 		//if target was set, fire spell
 		Sender->CastSpellEnd(level, flags&SC_INSTANT);
 	} else if(!Sender->LastTargetPos.isempty()) {

@@ -100,7 +100,6 @@
 		A22EBDCE14FF18030029C9C1 /* AppleLogger.mm in Sources */ = {isa = PBXBuildFile; fileRef = A22EBDCD14FF18030029C9C1 /* AppleLogger.mm */; };
 		A230584915D5BBCC00BDF69C /* MessageWindowLogger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A230584715D5BBCC00BDF69C /* MessageWindowLogger.cpp */; };
 		A230584A15D5BBCC00BDF69C /* MessageWindowLogger.h in Headers */ = {isa = PBXBuildFile; fileRef = A230584815D5BBCC00BDF69C /* MessageWindowLogger.h */; };
-		A2374CA215F1486E002A1C8C /* libbz2.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A2374CA115F1486E002A1C8C /* libbz2.dylib */; };
 		A238174B14B781F00058BFF4 /* GemRB.cfg.newinstall in Resources */ = {isa = PBXBuildFile; fileRef = A238174914B781CC0058BFF4 /* GemRB.cfg.newinstall */; };
 		A239390B145F8677007895B3 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A239390A145F8677007895B3 /* UIKit.framework */; };
 		A23EBFFA141979D500CC049E /* KeyMap.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A265ECDA13A8661600C6DF12 /* KeyMap.cpp */; };
@@ -207,6 +206,12 @@
 		A276B54913A28D5D00D41A8A /* libgemrb_core.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A2E6646F139E8DFA00310FC8 /* libgemrb_core.dylib */; };
 		A27979AF13ABA509009A6FEF /* SAVImporter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A27979AC13ABA4F7009A6FEF /* SAVImporter.cpp */; };
 		A27ABCD016F2396C00FE11EF /* NullSource.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A2FE2C7716F2313400DDC6C7 /* NullSource.cpp */; };
+		A27E5D5E18106384009434E5 /* IndexedArchive.h in Headers */ = {isa = PBXBuildFile; fileRef = A27E5D5918106384009434E5 /* IndexedArchive.h */; };
+		A27E5D5F18106384009434E5 /* KeyMap.h in Headers */ = {isa = PBXBuildFile; fileRef = A27E5D5A18106384009434E5 /* KeyMap.h */; };
+		A27E5D6018106384009434E5 /* PluginLoader.h in Headers */ = {isa = PBXBuildFile; fileRef = A27E5D5B18106384009434E5 /* PluginLoader.h */; };
+		A27E5D6118106384009434E5 /* VEFObject.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A27E5D5C18106384009434E5 /* VEFObject.cpp */; };
+		A27E5D6218106384009434E5 /* VEFObject.h in Headers */ = {isa = PBXBuildFile; fileRef = A27E5D5D18106384009434E5 /* VEFObject.h */; };
+		A27E5D63181063A8009434E5 /* VEFObject.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A27E5D5C18106384009434E5 /* VEFObject.cpp */; };
 		A27E831313A035C600B41410 /* 2DAImporter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A27B8699139F0A7D0002DC13 /* 2DAImporter.cpp */; };
 		A288622014A54FFD009AC280 /* libarchive.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A288621F14A54FFD009AC280 /* libarchive.dylib */; };
 		A288622214A5501F009AC280 /* libz.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A288622114A5501F009AC280 /* libz.dylib */; };
@@ -386,9 +391,12 @@
 		A2D0505214D0B09F00D8CD77 /* SDL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A2D0505014D0B06C00D8CD77 /* SDL.framework */; };
 		A2D0505414D0C17500D8CD77 /* SDL.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A2D0505014D0B06C00D8CD77 /* SDL.framework */; };
 		A2DB6D5A15D9EE8C00D70E88 /* MessageWindowLogger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A230584715D5BBCC00BDF69C /* MessageWindowLogger.cpp */; };
+		A2DBE468186C862F00B39AF8 /* SDLSurfaceSprite2D.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A2EC2F92176BD44C00FD960E /* SDLSurfaceSprite2D.cpp */; };
 		A2DE329914EB071200117503 /* Logger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A2DE329714EB071200117503 /* Logger.cpp */; };
 		A2DE329A14EB071200117503 /* Logger.h in Headers */ = {isa = PBXBuildFile; fileRef = A2DE329814EB071200117503 /* Logger.h */; };
 		A2DE32AD14EB0C6900117503 /* Logger.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A2DE329714EB071200117503 /* Logger.cpp */; };
+		A2DE8807181064DF007B8CC5 /* libvlc.5.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A2DE8806181064DF007B8CC5 /* libvlc.5.dylib */; };
+		A2DE880918106615007B8CC5 /* libbz2.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A2DE880818106615007B8CC5 /* libbz2.dylib */; };
 		A2E1583114D1D8DA0044F3C5 /* GEM_AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = A2E1583014D1D8DA0044F3C5 /* GEM_AppDelegate.mm */; };
 		A2E27EF716EEA7B00079E104 /* InterfaceConfig.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A2E27EF516EEA7B00079E104 /* InterfaceConfig.cpp */; };
 		A2E27EF916EEA7B00079E104 /* InterfaceConfig.h in Headers */ = {isa = PBXBuildFile; fileRef = A2E27EF616EEA7B00079E104 /* InterfaceConfig.h */; };
@@ -591,7 +599,6 @@
 		A2E66415139E886100310FC8 /* Button.h in Headers */ = {isa = PBXBuildFile; fileRef = A2BF9FD61395FF62006ADC12 /* Button.h */; };
 		A2E66416139E886100310FC8 /* Console.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A2BF9FD71395FF62006ADC12 /* Console.cpp */; };
 		A2E66417139E886100310FC8 /* Console.h in Headers */ = {isa = PBXBuildFile; fileRef = A2BF9FD81395FF62006ADC12 /* Console.h */; };
-		A2E66418139E886100310FC8 /* config.h in Headers */ = {isa = PBXBuildFile; fileRef = A2FE553A13982BA6006AB962 /* config.h */; };
 		A2E66419139E886100310FC8 /* Control.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A2BF9FD91395FF62006ADC12 /* Control.cpp */; };
 		A2E6641A139E886100310FC8 /* Control.h in Headers */ = {isa = PBXBuildFile; fileRef = A2BF9FDA1395FF62006ADC12 /* Control.h */; };
 		A2E6641B139E886100310FC8 /* EventMgr.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A2BF9FDB1395FF62006ADC12 /* EventMgr.cpp */; };
@@ -1180,7 +1187,6 @@
 		A22EBDCD14FF18030029C9C1 /* AppleLogger.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = AppleLogger.mm; sourceTree = "<group>"; };
 		A230584715D5BBCC00BDF69C /* MessageWindowLogger.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = MessageWindowLogger.cpp; sourceTree = "<group>"; };
 		A230584815D5BBCC00BDF69C /* MessageWindowLogger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = MessageWindowLogger.h; sourceTree = "<group>"; };
-		A2374CA115F1486E002A1C8C /* libbz2.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libbz2.dylib; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS5.1.sdk/usr/lib/libbz2.dylib; sourceTree = DEVELOPER_DIR; };
 		A238174914B781CC0058BFF4 /* GemRB.cfg.newinstall */ = {isa = PBXFileReference; lastKnownFileType = text; name = GemRB.cfg.newinstall; path = ios/GemRB.cfg.newinstall; sourceTree = "<group>"; };
 		A239390A145F8677007895B3 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS5.0.sdk/System/Library/Frameworks/UIKit.framework; sourceTree = DEVELOPER_DIR; };
 		A2462F1113A036B1002D1F02 /* AREImporter.so */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = AREImporter.so; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1346,6 +1352,11 @@
 		A27B8782139F0A7D0002DC13 /* WMPImporter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WMPImporter.h; sourceTree = "<group>"; };
 		A27B8786139F0A7D0002DC13 /* ZLibManager.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ZLibManager.cpp; sourceTree = "<group>"; };
 		A27B8787139F0A7D0002DC13 /* ZLibManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ZLibManager.h; sourceTree = "<group>"; };
+		A27E5D5918106384009434E5 /* IndexedArchive.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IndexedArchive.h; sourceTree = "<group>"; };
+		A27E5D5A18106384009434E5 /* KeyMap.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = KeyMap.h; sourceTree = "<group>"; };
+		A27E5D5B18106384009434E5 /* PluginLoader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PluginLoader.h; sourceTree = "<group>"; };
+		A27E5D5C18106384009434E5 /* VEFObject.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = VEFObject.cpp; sourceTree = "<group>"; };
+		A27E5D5D18106384009434E5 /* VEFObject.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = VEFObject.h; sourceTree = "<group>"; };
 		A27E830A13A0358200B41410 /* 2DAImporter.so */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = 2DAImporter.so; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2830A0F13A05A64000A63FE /* OpenAL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenAL.framework; path = System/Library/Frameworks/OpenAL.framework; sourceTree = SDKROOT; };
 		A2830A3913A05B5F000A63FE /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
@@ -1360,7 +1371,7 @@
 		A29504771609721300BB22AA /* TTFImporter.so */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = TTFImporter.so; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2969F0D168CDC0D00D9C6FC /* CombatInfo.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CombatInfo.cpp; sourceTree = "<group>"; };
 		A2969F0E168CDC0D00D9C6FC /* CombatInfo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CombatInfo.h; sourceTree = "<group>"; };
-		A298DD1114EB4E8C00F59F56 /* SDL2Video.so */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = SDL2Video.so; sourceTree = BUILT_PRODUCTS_DIR; };
+		A298DD1114EB4E8C00F59F56 /* SDLVideo.so */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = SDLVideo.so; sourceTree = BUILT_PRODUCTS_DIR; };
 		A298DD1314EB4EDE00F59F56 /* SDL12Video.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SDL12Video.cpp; sourceTree = "<group>"; };
 		A298DD1414EB4EDE00F59F56 /* SDL12Video.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SDL12Video.h; sourceTree = "<group>"; };
 		A298DD1714EB4EEB00F59F56 /* SDL20Video.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SDL20Video.cpp; sourceTree = "<group>"; };
@@ -1387,12 +1398,12 @@
 		A2A3A7EE14A51B1800F705CF /* GEM_SDL_Keyboard.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GEM_SDL_Keyboard.m; sourceTree = "<group>"; };
 		A2A6A459146893CC000F1688 /* TTFFontManager.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TTFFontManager.cpp; sourceTree = "<group>"; };
 		A2A6A45A146893CC000F1688 /* TTFFontManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TTFFontManager.h; sourceTree = "<group>"; };
-		A2AAC14615C1C2F500D27766 /* FreeType.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FreeType.framework; path = ../../../../../../Library/Frameworks/FreeType.framework; sourceTree = "<group>"; };
+		A2AAC14615C1C2F500D27766 /* FreeType.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FreeType.framework; path = /Library/Frameworks/FreeType.framework; sourceTree = "<absolute>"; };
 		A2AAF36713A1507100AE8402 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		A2AAF38D13A150D700AE8402 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		A2AAF39313A150F900AE8402 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		A2AF8FC614DDCE47005CAC5D /* Vorbis.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Vorbis.framework; path = /Library/Frameworks/Vorbis.framework; sourceTree = "<absolute>"; };
-		A2B67A6816B1DF6500577415 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = ../../../../../System/Library/Frameworks/CoreFoundation.framework; sourceTree = "<group>"; };
+		A2B67A6816B1DF6500577415 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = /System/Library/Frameworks/CoreFoundation.framework; sourceTree = "<absolute>"; };
 		A2BD125615A7EDFE000FAB95 /* VLCPlayer.so */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = VLCPlayer.so; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2BD125815A7EE61000FAB95 /* VLCPlayer.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = VLCPlayer.cpp; path = ../VLCPlayer/VLCPlayer.cpp; sourceTree = "<group>"; };
 		A2BD125915A7EE61000FAB95 /* VLCPlayer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = VLCPlayer.h; path = ../VLCPlayer/VLCPlayer.h; sourceTree = "<group>"; };
@@ -1659,6 +1670,8 @@
 		A2DB6D5815D9ECB300D70E88 /* TileRenderer.inl */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; path = TileRenderer.inl; sourceTree = "<group>"; };
 		A2DE329714EB071200117503 /* Logger.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Logger.cpp; sourceTree = "<group>"; };
 		A2DE329814EB071200117503 /* Logger.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Logger.h; sourceTree = "<group>"; };
+		A2DE8806181064DF007B8CC5 /* libvlc.5.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libvlc.5.dylib; path = /Applications/VLC.app/Contents/MacOS/lib/libvlc.5.dylib; sourceTree = "<absolute>"; };
+		A2DE880818106615007B8CC5 /* libbz2.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libbz2.dylib; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS7.0.sdk/usr/lib/libbz2.dylib; sourceTree = DEVELOPER_DIR; };
 		A2E1582F14D1D8DA0044F3C5 /* GEM_AppDelegate.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = GEM_AppDelegate.h; sourceTree = "<group>"; };
 		A2E1583014D1D8DA0044F3C5 /* GEM_AppDelegate.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = GEM_AppDelegate.mm; sourceTree = "<group>"; };
 		A2E27EF516EEA7B00079E104 /* InterfaceConfig.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = InterfaceConfig.cpp; sourceTree = "<group>"; };
@@ -1683,7 +1696,6 @@
 		A2FE2C7716F2313400DDC6C7 /* NullSource.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = NullSource.cpp; sourceTree = "<group>"; };
 		A2FE2C7816F2313400DDC6C7 /* NullSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NullSource.h; sourceTree = "<group>"; };
 		A2FE2C8116F2316400DDC6C7 /* NullSource.so */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.dylib"; includeInIndex = 0; path = NullSource.so; sourceTree = BUILT_PRODUCTS_DIR; };
-		A2FE553A13982BA6006AB962 /* config.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = config.h; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -2046,8 +2058,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A2DE880918106615007B8CC5 /* libbz2.dylib in Frameworks */,
 				A228D24916A86FA00053375D /* libiconv.dylib in Frameworks */,
-				A2374CA215F1486E002A1C8C /* libbz2.dylib in Frameworks */,
 				A288622214A5501F009AC280 /* libz.dylib in Frameworks */,
 				A288622014A54FFD009AC280 /* libarchive.dylib in Frameworks */,
 				A2EC8067146056B40033754A /* CoreGraphics.framework in Frameworks */,
@@ -2068,6 +2080,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A2DE8807181064DF007B8CC5 /* libvlc.5.dylib in Frameworks */,
 				A2BD125215A7EDFE000FAB95 /* libgemrb_core.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2184,7 +2197,7 @@
 				A276B4AF13A28AEE00D41A8A /* ZLibManager.so */,
 				A276B4F413A28C0400D41A8A /* STOImporter.so */,
 				A2F0505113ABB80B0023B7EB /* SAVImporter.so */,
-				A298DD1114EB4E8C00F59F56 /* SDL2Video.so */,
+				A298DD1114EB4E8C00F59F56 /* SDLVideo.so */,
 				A2BD125615A7EDFE000FAB95 /* VLCPlayer.so */,
 				A29504771609721300BB22AA /* TTFImporter.so */,
 				A2FE2C8116F2316400DDC6C7 /* NullSource.so */,
@@ -2195,10 +2208,6 @@
 		29B97314FDCFA39411CA2CEA /* GemRB_OSX */ = {
 			isa = PBXGroup;
 			children = (
-				A2B67A6816B1DF6500577415 /* CoreFoundation.framework */,
-				A2374CA115F1486E002A1C8C /* libbz2.dylib */,
-				A2AAC14615C1C2F500D27766 /* FreeType.framework */,
-				A2FE553A13982BA6006AB962 /* config.h */,
 				A2D4C51D13A978110086BCC4 /* includes */,
 				A27B8697139F0A7D0002DC13 /* plugins */,
 				A2BF9F8C1395FF61006ADC12 /* core */,
@@ -2239,6 +2248,8 @@
 		29B97323FDCFA39411CA2CEA /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				A2B67A6816B1DF6500577415 /* CoreFoundation.framework */,
+				A2AAC14615C1C2F500D27766 /* FreeType.framework */,
 				A2EC8064146056900033754A /* AudioToolbox.framework */,
 				A2AAF38D13A150D700AE8402 /* AudioToolbox.framework */,
 				A2491880141092F20038B170 /* Cocoa.framework */,
@@ -2887,6 +2898,7 @@
 				A2BF9FF71395FF62006ADC12 /* ImageMgr.h */,
 				A2BF9FF81395FF62006ADC12 /* ImageWriter.cpp */,
 				A2BF9FF91395FF62006ADC12 /* ImageWriter.h */,
+				A27E5D5918106384009434E5 /* IndexedArchive.h */,
 				A2BF9FFA1395FF62006ADC12 /* IniSpawn.cpp */,
 				A2BF9FFB1395FF62006ADC12 /* IniSpawn.h */,
 				A2BF9FFC1395FF62006ADC12 /* Interface.cpp */,
@@ -2899,6 +2911,7 @@
 				A2BFA0011395FF62006ADC12 /* Item.h */,
 				A2BFA0021395FF62006ADC12 /* ItemMgr.cpp */,
 				A2BFA0031395FF62006ADC12 /* ItemMgr.h */,
+				A27E5D5A18106384009434E5 /* KeyMap.h */,
 				A2BFA0041395FF62006ADC12 /* LRUCache.cpp */,
 				A2BFA0051395FF62006ADC12 /* LRUCache.h */,
 				A2BFA0071395FF62006ADC12 /* Map.cpp */,
@@ -2918,6 +2931,7 @@
 				A2BFA0151395FF62006ADC12 /* PathFinder.h */,
 				A2BFA0161395FF62006ADC12 /* Plugin.cpp */,
 				A2BFA0171395FF62006ADC12 /* Plugin.h */,
+				A27E5D5B18106384009434E5 /* PluginLoader.h */,
 				A2BFA0181395FF62006ADC12 /* PluginMgr.cpp */,
 				A2BFA0191395FF62006ADC12 /* PluginMgr.h */,
 				A2BFA01A1395FF62006ADC12 /* Polygon.cpp */,
@@ -2985,6 +2999,8 @@
 				A2BFA0741395FF62006ADC12 /* TypeID.h */,
 				A2BFA0751395FF62006ADC12 /* Variables.cpp */,
 				A2BFA0761395FF62006ADC12 /* Variables.h */,
+				A27E5D5C18106384009434E5 /* VEFObject.cpp */,
+				A27E5D5D18106384009434E5 /* VEFObject.h */,
 				A2BFA0771395FF62006ADC12 /* Video.cpp */,
 				A2BFA0781395FF62006ADC12 /* Video.h */,
 				A2BFA0791395FF62006ADC12 /* VideoMode.h */,
@@ -3160,6 +3176,8 @@
 		A2E7985C14845B3F00B15DF4 /* dylibs */ = {
 			isa = PBXGroup;
 			children = (
+				A2DE880818106615007B8CC5 /* libbz2.dylib */,
+				A2DE8806181064DF007B8CC5 /* libvlc.5.dylib */,
 				A228D24816A86FA00053375D /* libiconv.dylib */,
 				A2A2EA4516A76ACC0092B903 /* libiconv.dylib */,
 				A288621F14A54FFD009AC280 /* libarchive.dylib */,
@@ -3206,8 +3224,10 @@
 				A2E66372139E883100310FC8 /* Dialog.h in Headers */,
 				A2E66374139E883100310FC8 /* DialogHandler.h in Headers */,
 				A2E66376139E883100310FC8 /* DialogMgr.h in Headers */,
+				A27E5D5E18106384009434E5 /* IndexedArchive.h in Headers */,
 				A2E66378139E883100310FC8 /* DisplayMessage.h in Headers */,
 				A2E66379139E883100310FC8 /* Effect.h in Headers */,
+				A27E5D6018106384009434E5 /* PluginLoader.h in Headers */,
 				A2E6637B139E883100310FC8 /* EffectMgr.h in Headers */,
 				A2E6637D139E883100310FC8 /* EffectQueue.h in Headers */,
 				A2E6637F139E883100310FC8 /* Factory.h in Headers */,
@@ -3284,11 +3304,12 @@
 				A2E6640B139E885A00310FC8 /* Container.h in Headers */,
 				A2E6640D139E885A00310FC8 /* Door.h in Headers */,
 				A2E6640F139E885A00310FC8 /* InfoPoint.h in Headers */,
+				A27E5D6218106384009434E5 /* VEFObject.h in Headers */,
 				A2E66411139E885A00310FC8 /* PCStatStruct.h in Headers */,
+				A27E5D5F18106384009434E5 /* KeyMap.h in Headers */,
 				A2E66413139E885A00310FC8 /* Scriptable.h in Headers */,
 				A2E66415139E886100310FC8 /* Button.h in Headers */,
 				A2E66417139E886100310FC8 /* Console.h in Headers */,
-				A2E66418139E886100310FC8 /* config.h in Headers */,
 				A2E6641A139E886100310FC8 /* Control.h in Headers */,
 				A2E6641C139E886100310FC8 /* EventMgr.h in Headers */,
 				A2E6641E139E886100310FC8 /* GameControl.h in Headers */,
@@ -3331,9 +3352,9 @@
 			buildRules = (
 			);
 			dependencies = (
+				A2E6633C139E876900310FC8 /* PBXTargetDependency */,
 				A2FE2C8316F231CB00DDC6C7 /* PBXTargetDependency */,
 				A2AF8FCD14DDCEBD005CAC5D /* PBXTargetDependency */,
-				A2E6633C139E876900310FC8 /* PBXTargetDependency */,
 				A23EBFFC1419A81500CC049E /* PBXTargetDependency */,
 				A2375BA113AAF58E00E7EF9B /* PBXTargetDependency */,
 				A2375BA313AAF58E00E7EF9B /* PBXTargetDependency */,
@@ -4040,7 +4061,7 @@
 			);
 			name = SDL2Video;
 			productName = SDLVideo;
-			productReference = A298DD1114EB4E8C00F59F56 /* SDL2Video.so */;
+			productReference = A298DD1114EB4E8C00F59F56 /* SDLVideo.so */;
 			productType = "com.apple.product-type.library.dynamic";
 		};
 		A29BF7B113A0380F00C812DD /* BAMImporter */ = {
@@ -4064,6 +4085,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A29BF86313A042B600C812DD /* Build configuration list for PBXNativeTarget "GemRB iOS" */;
 			buildPhases = (
+				A23B17461880787B00EB6AC8 /* ShellScript */,
 				A22DCCDD14A8F78C0067D6D1 /* ShellScript */,
 				A29BF85813A0427900C812DD /* Resources */,
 				A29BF85913A0427900C812DD /* Sources */,
@@ -4101,6 +4123,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = A2E6633D139E87A400310FC8 /* Build configuration list for PBXNativeTarget "gemrb_core" */;
 			buildPhases = (
+				A23B1745188061AA00EB6AC8 /* ShellScript */,
 				A2E66334139E875400310FC8 /* Headers */,
 				A2E66335139E875400310FC8 /* Sources */,
 				A2E66336139E875400310FC8 /* Frameworks */,
@@ -4285,6 +4308,34 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/*\nThis script makes the bundle thumbnails\n*/\nf=${SRCROOT}\nin=${SRCROOT}/../artwork/gemrb.icns\npng512=${f}/ios/iTunesArtwork\n\nsips --resampleWidth 512 \"${in}\" --out \"${png512}\"\nin=${png512}\necho $in\nsips --setProperty format png --resampleWidth 57 \"${in}\" --out \"${f}/ios/Icon.png\"\nsips --setProperty format png --resampleWidth 114 \"${in}\" --out \"${f}/ios/Icon@2x.png\"\nsips --setProperty format png --resampleWidth 29 \"${in}\" --out \"${f}/ios/Icon-Small.png\"\nsips --setProperty format png --resampleWidth 58 \"${in}\" --out \"${f}/ios/Icon-Small@2x.png\"\nsips --setProperty format png --resampleWidth 50 \"${in}\" --out \"${f}/ios/Icon-Small-50.png\"\nsips --setProperty format png --resampleWidth 72 \"${in}\" --out \"${f}/ios/Icon-72.png\"";
+		};
+		A23B1745188061AA00EB6AC8 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/CMakeLists.txt",
+			);
+			outputPaths = (
+				"$(SRCROOT)/config.h",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "cmake \"$SRCROOT\"";
+		};
+		A23B17461880787B00EB6AC8 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "cmake \"$SRCROOT\"";
 		};
 		A249187F141079510038B170 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -4700,6 +4751,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A2DBE468186C862F00B39AF8 /* SDLSurfaceSprite2D.cpp in Sources */,
 				A298DD0814EB4E8C00F59F56 /* CocoaWrapper.m in Sources */,
 				A298DD0914EB4E8C00F59F56 /* SDLVideo.cpp in Sources */,
 				A298DD1A14EB4EEB00F59F56 /* SDL20Video.cpp in Sources */,
@@ -4879,6 +4931,7 @@
 				A226F44113A11A94009CE75E /* PSTOpcodes.cpp in Sources */,
 				A226F44413A11AA3009CE75E /* SPLImporter.cpp in Sources */,
 				A226F44513A11AA8009CE75E /* STOImporter.cpp in Sources */,
+				A27E5D63181063A8009434E5 /* VEFObject.cpp in Sources */,
 				A226F44613A11AAC009CE75E /* TISImporter.cpp in Sources */,
 				A226F44713A11AB4009CE75E /* TLKImporter.cpp in Sources */,
 				A226F44813A11AB4009CE75E /* TlkOverride.cpp in Sources */,
@@ -5059,6 +5112,7 @@
 				A298DD2214EB61D300F59F56 /* Stdio.cpp in Sources */,
 				A2C76D2A14F196E900961680 /* StringBuffer.cpp in Sources */,
 				A2CB5AC315000A0D00B5C154 /* File.cpp in Sources */,
+				A27E5D6118106384009434E5 /* VEFObject.cpp in Sources */,
 				A230584915D5BBCC00BDF69C /* MessageWindowLogger.cpp in Sources */,
 				A2969F0F168CDC0D00D9C6FC /* CombatInfo.cpp in Sources */,
 				A2E27EF716EEA7B00079E104 /* InterfaceConfig.cpp in Sources */,
@@ -6272,6 +6326,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "${BUILT_PRODUCTS_DIR}/GemRB.app/Contents/MacOS/GemRB";
 				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = NO;
 				DYLIB_COMPATIBILITY_VERSION = "";
 				DYLIB_CURRENT_VERSION = "";
 				EXECUTABLE_EXTENSION = so;
@@ -6284,6 +6339,7 @@
 				INSTALL_PATH = "$(HOME)/Application Support/GemRB/plugins";
 				MACH_O_TYPE = mh_bundle;
 				PRODUCT_NAME = SDLVideo;
+				STRIP_INSTALLED_PRODUCT = NO;
 				UNEXPORTED_SYMBOLS_FILE = "";
 			};
 			name = Release;
@@ -6587,14 +6643,18 @@
 				DYLIB_CURRENT_VERSION = "";
 				EXECUTABLE_EXTENSION = so;
 				EXECUTABLE_PREFIX = "";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(LOCAL_LIBRARY_DIR)/Frameworks",
+				);
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				HEADER_SEARCH_PATHS = (
-					/Library/Frameworks/SDL.framework/Headers,
+					/Library/Frameworks/SDL2.framework/Headers,
 					"$(HEADER_SEARCH_PATHS)",
 				);
 				INSTALL_PATH = "$(HOME)/Application Support/GemRB/plugins";
 				MACH_O_TYPE = mh_bundle;
-				PRODUCT_NAME = SDL2Video;
+				PRODUCT_NAME = SDLVideo;
 				UNEXPORTED_SYMBOLS_FILE = "";
 			};
 			name = Debug;
@@ -6608,14 +6668,18 @@
 				DYLIB_CURRENT_VERSION = "";
 				EXECUTABLE_EXTENSION = so;
 				EXECUTABLE_PREFIX = "";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(LOCAL_LIBRARY_DIR)/Frameworks",
+				);
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				HEADER_SEARCH_PATHS = (
-					/Library/Frameworks/SDL.framework/Headers,
+					/Library/Frameworks/SDL2.framework/Headers,
 					"$(HEADER_SEARCH_PATHS)",
 				);
 				INSTALL_PATH = "$(HOME)/Application Support/GemRB/plugins";
 				MACH_O_TYPE = mh_bundle;
-				PRODUCT_NAME = SDL2Video;
+				PRODUCT_NAME = SDLVideo;
 				UNEXPORTED_SYMBOLS_FILE = "";
 			};
 			name = Release;
@@ -6681,6 +6745,7 @@
 					"-DHAVE_CONFIG_H",
 					"-W",
 					"-Wextra",
+					"-DTARGET_OS_MAC=0",
 				);
 				PRODUCT_NAME = GemRB;
 				PROVISIONING_PROFILE = "";
@@ -6721,9 +6786,10 @@
 					./,
 					"-DSTATIC_LINK",
 					"-DHAVE_CONFIG_H",
-					"-DTARGET_OS_IPHONE",
+					"-DTARGET_OS_IPHONE=1",
 					"-W",
 					"-Wextra",
+					"-DTARGET_OS_MAC=0",
 				);
 				PRODUCT_NAME = GemRB;
 				PROVISIONING_PROFILE = "";
@@ -6737,6 +6803,7 @@
 		A2BD125415A7EDFE000FAB95 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
 				COMBINE_HIDPI_IMAGES = YES;
 				DYLIB_COMPATIBILITY_VERSION = "";
 				DYLIB_CURRENT_VERSION = "";
@@ -6751,7 +6818,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/VLC.app/Contents/MacOS/lib\"";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"\"$(SYSTEM_APPS_DIR)/VLC.app/Contents/MacOS/lib\"",
+					"\\\"$(SYSTEM_APPS_DIR)/VLC.app/Contents/MacOS/lib\\\"",
+					"$(SYSTEM_APPS_DIR)/VLC.app/Contents/MacOS/lib",
 				);
 				MACH_O_TYPE = mh_bundle;
 				OTHER_LDFLAGS = "-lvlc";
@@ -6762,6 +6830,7 @@
 		A2BD125515A7EDFE000FAB95 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ARCHS = "$(NATIVE_ARCH_ACTUAL)";
 				COMBINE_HIDPI_IMAGES = YES;
 				DYLIB_COMPATIBILITY_VERSION = "";
 				DYLIB_CURRENT_VERSION = "";
@@ -6776,7 +6845,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "\"$(SYSTEM_APPS_DIR)/VLC.app/Contents/MacOS/lib\"";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"\"$(SYSTEM_APPS_DIR)/VLC.app/Contents/MacOS/lib\"",
+					"\\\"$(SYSTEM_APPS_DIR)/VLC.app/Contents/MacOS/lib\\\"",
+					"$(SYSTEM_APPS_DIR)/VLC.app/Contents/MacOS/lib",
 				);
 				MACH_O_TYPE = mh_bundle;
 				OTHER_LDFLAGS = "-lvlc";
@@ -6819,12 +6889,10 @@
 		A2F0505213ABB80C0023B7EB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COMBINE_HIDPI_IMAGES = YES;
 				DYLIB_COMPATIBILITY_VERSION = "";
 				DYLIB_CURRENT_VERSION = "";
 				EXECUTABLE_EXTENSION = so;
 				EXECUTABLE_PREFIX = "";
-				INSTALL_PATH = "~/Library/Application Support/GemRB/plugins";
 				MACH_O_TYPE = mh_bundle;
 				PRODUCT_NAME = SAVImporter;
 			};
@@ -6833,12 +6901,10 @@
 		A2F0505313ABB80C0023B7EB /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				COMBINE_HIDPI_IMAGES = YES;
 				DYLIB_COMPATIBILITY_VERSION = "";
 				DYLIB_CURRENT_VERSION = "";
 				EXECUTABLE_EXTENSION = so;
 				EXECUTABLE_PREFIX = "";
-				INSTALL_PATH = "~/Library/Application Support/GemRB/plugins";
 				MACH_O_TYPE = mh_bundle;
 				PRODUCT_NAME = SAVImporter;
 			};
@@ -6938,6 +7004,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = YES;
 				COMBINE_HIDPI_IMAGES = YES;
+				COPY_PHASE_STRIP = NO;
 				FRAMEWORK_SEARCH_PATHS = (
 					/System/Library/Frameworks,
 					"$(FRAMEWORK_SEARCH_PATHS)",
@@ -6945,6 +7012,8 @@
 				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
 				INFOPLIST_FILE = osx/Info.plist;
 				PRODUCT_NAME = GemRB;
+				STRIP_INSTALLED_PRODUCT = NO;
+				STRIP_STYLE = debugging;
 				WRAPPER_EXTENSION = app;
 			};
 			name = Release;
@@ -6972,7 +7041,7 @@
 				"GCC_VERSION[arch=x86_64]" = com.apple.compilers.llvm.clang.1_0;
 				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
-				GCC_WARN_PEDANTIC = NO;
+				GCC_WARN_PEDANTIC = YES;
 				GCC_WARN_SIGN_COMPARE = YES;
 				GCC_WARN_TYPECHECK_CALLS_TO_PRINTF = NO;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
@@ -6988,8 +7057,8 @@
 				LD_RUNPATH_SEARCH_PATHS = "@loader_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.5;
 				OTHER_CFLAGS = (
-					"-DTARGET_OS_MAC=1",
 					"-DHAVE_CONFIG_H",
+					"-DHAVE_ICONV=1",
 					"-g",
 					"-D_DEBUG",
 					"-isystem",
@@ -6998,6 +7067,7 @@
 					"-Wextra",
 					"-Wformat",
 					"-Wall",
+					"-DTARGET_OS_MAC=1",
 				);
 				SDKROOT = "";
 				"SDKROOT[arch=*]" = "";
@@ -7032,7 +7102,7 @@
 				"GCC_VERSION[arch=x86_64]" = com.apple.compilers.llvm.clang.1_0;
 				GCC_WARN_ABOUT_MISSING_NEWLINE = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES;
-				GCC_WARN_PEDANTIC = NO;
+				GCC_WARN_PEDANTIC = YES;
 				GCC_WARN_SIGN_COMPARE = YES;
 				GCC_WARN_TYPECHECK_CALLS_TO_PRINTF = NO;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES;
@@ -7048,13 +7118,13 @@
 				LD_RUNPATH_SEARCH_PATHS = "@loader_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 10.5;
 				OTHER_CFLAGS = (
-					"-DTARGET_OS_MAC=1",
 					"-DHAVE_CONFIG_H",
 					"-isystem",
 					./,
 					"-W",
 					"-Wextra",
 					"-Wformat",
+					"-DTARGET_OS_MAC=1",
 				);
 				SDKROOT = "";
 				"SDKROOT[arch=*]" = "";

@@ -23,27 +23,19 @@
 #include "strrefs.h"
 #include "ie_cursors.h"
 
-#include "Audio.h"
 #include "DisplayMessage.h"
 #include "Game.h"
 #include "GameData.h"
-#include "Interface.h"
-#include "Item.h"
 #include "Font.h"
-#include "Map.h"
 #include "Projectile.h"
 #include "Spell.h"
 #include "SpriteCover.h"
-#include "TileMap.h"
 #include "Video.h"
 #include "GameScript/GSUtils.h"
 #include "GameScript/Matching.h" // MatchActor
 #include "GUI/GameControl.h"
-//#include "GUI/Window.h"
+#include "RNG/RNG_SFMT.h"
 #include "Scriptable/InfoPoint.h"
-
-#include <cassert>
-#include <cmath>
 
 namespace GemRB {
 
@@ -119,6 +111,7 @@ Scriptable::Scriptable(ScriptableType type)
 	Pos.x = 0;
 	Pos.y = 0;
 
+	LastTarget = 0;
 	LastSpellOnMe = 0xffffffff;
 	ResetCastingState(NULL);
 	InterruptCasting = false;
@@ -248,8 +241,6 @@ void Scriptable::FixHeadTextPos()
 }
 
 #define MAX_DELAY  6000
-static const Color black={0,0,0,0};
-
 void Scriptable::DrawOverheadText(const Region &screen)
 {
 	unsigned long time = core->GetGame()->Ticks;
@@ -269,7 +260,7 @@ void Scriptable::DrawOverheadText(const Region &screen)
 		if (time<256) {
 			ieByte time2 = time; // shut up narrowing warnings
 			const Color overHeadColor = {time2,time2,time2,time2};
-			palette = core->CreatePalette(overHeadColor, black);
+			palette = core->CreatePalette(overHeadColor, ColorBlack);
 		}
 	}
 
@@ -504,12 +495,18 @@ void Scriptable::ClearActions()
 	WaitCounter = 0;
 	LastTarget = 0;
 	LastTargetPos.empty();
+	LastSpellTarget = 0;
 
 	if (Type == ST_ACTOR) {
 		Interrupt();
 	} else {
 		NoInterrupt();
 	}
+}
+
+void Scriptable::Stop()
+{
+	ClearActions();
 }
 
 void Scriptable::ReleaseCurrentAction()
@@ -809,7 +806,7 @@ void Scriptable::CreateProjectile(const ieResRef SpellResRef, ieDword tgt, int l
 						}
 					}
 					if (tgt) {
-						LastTarget = newact->GetGlobalID();
+						LastSpellTarget = newact->GetGlobalID();
 						LastTargetPos = newact->Pos;
 					} else {
 						// no better idea; I wonder if the original randomized point targets at all
@@ -943,8 +940,8 @@ void Scriptable::SendTriggerToAll(TriggerEntry entry)
 inline void Scriptable::ResetCastingState(Actor *caster) {
 	SpellHeader = -1;
 	SpellResRef[0] = 0;
-	LastTarget = 0;
 	LastTargetPos.empty();
+	LastSpellTarget = 0;
 	if (caster) {
 		memset(&(caster->wildSurgeMods), 0, sizeof(caster->wildSurgeMods));
 	}
@@ -1044,10 +1041,10 @@ void Scriptable::CastSpellEnd(int level, int no_stance)
 	}
 
 	if (SpellHeader == -1) {
-		LastTarget = 0;
+		LastSpellTarget = 0;
 		return;
 	}
-	if (!LastTarget) {
+	if (!LastSpellTarget) {
 		SpellHeader = -1;
 		return;
 	}
@@ -1065,7 +1062,7 @@ void Scriptable::CastSpellEnd(int level, int no_stance)
 	}
 
 	//if the projectile doesn't need to follow the target, then use the target position
-	CreateProjectile(SpellResRef, LastTarget, level, GetSpellDistance(SpellResRef, this)==0xffffffff);
+	CreateProjectile(SpellResRef, LastSpellTarget, level, GetSpellDistance(SpellResRef, this)==0xffffffff);
 	//FIXME: this trigger affects actors whom the caster sees, not just the caster itself
 	// the original engine saves lasttrigger only in case of SpellCast, so we have to differentiate
 	ieDword spellID = ResolveSpellNumber(SpellResRef);
@@ -1082,7 +1079,7 @@ void Scriptable::CastSpellEnd(int level, int no_stance)
 	}
 
 	// TODO: maybe it should be set on effect application, since the data uses it with dispel magic and true sight a lot
-	Actor *target = area->GetActorByGlobalID(LastTarget);
+	Actor *target = area->GetActorByGlobalID(LastSpellTarget);
 	if (target) {
 		target->AddTrigger(TriggerEntry(trigger_spellcastonme, GetGlobalID(), spellID));
 		target->LastSpellOnMe = spellID;
@@ -1103,7 +1100,6 @@ int Scriptable::CanCast(const ieResRef SpellResRef, bool verbose) {
 	// check for area dead magic
 	// tob AR3004 is a dead magic area, but using a script with personal dead magic
 	if (area->GetInternalFlag()&AF_DEADMAGIC) {
-		// TODO: display fizzling animation
 		displaymsg->DisplayConstantStringName(STR_DEADMAGIC_FAIL, DMC_WHITE, this);
 		return 0;
 	}
@@ -1130,7 +1126,6 @@ int Scriptable::CanCast(const ieResRef SpellResRef, bool verbose) {
 
 		// check for personal dead magic
 		if (actor->Modified[IE_DEADMAGIC]) {
-			// TODO: display fizzling animation
 			displaymsg->DisplayConstantStringName(STR_DEADMAGIC_FAIL, DMC_WHITE, this);
 			return 0;
 		}
@@ -1165,8 +1160,12 @@ int Scriptable::CanCast(const ieResRef SpellResRef, bool verbose) {
 			displaymsg->DisplayRollStringName(40955, DMC_LIGHTGREY, actor, roll, chance);
 		}
 		if (failed) {
-			// TODO: display fizzling animation
 			displaymsg->DisplayConstantStringName(STR_MISCASTMAGIC, DMC_WHITE, this);
+			return 0;
+		}
+
+		// iwd2: make a concentration check if needed
+		if (!actor->ConcentrationCheck()) {
 			return 0;
 		}
 	}
@@ -1194,7 +1193,7 @@ void Scriptable::SpellcraftCheck(const Actor *caster, const ieResRef SpellResRef
 			poi++;
 			continue;
 		}
-		if ((signed)detective->GetStat(IE_SPELLCRAFT) <= 0) {
+		if ((signed)detective->GetSkill(IE_SPELLCRAFT) <= 0) {
 			poi++;
 			continue;
 		}
@@ -1218,12 +1217,28 @@ void Scriptable::SpellcraftCheck(const Actor *caster, const ieResRef SpellResRef
 	free(neighbours);
 }
 
+// shortcut for internal use when there is no wait
+void Scriptable::DirectlyCastSpellPoint(const Point &target, ieResRef spellref, int level, int no_stance, bool deplete, bool instant, bool nointerrupt)
+{
+	SetSpellResRef(spellref);
+	CastSpellPoint(target, deplete, instant, nointerrupt);
+	CastSpellPointEnd(level, no_stance);
+}
+
+// shortcut for internal use
+void Scriptable::DirectlyCastSpell(Scriptable *target, ieResRef spellref, int level, int no_stance, bool deplete, bool instant, bool nointerrupt)
+{
+	SetSpellResRef(spellref);
+	CastSpell(target, deplete, instant, nointerrupt);
+	CastSpellEnd(level, no_stance);
+}
+
 //set target as point
 //if spell needs to be depleted, do it
 //if spell is illegal stop casting
 int Scriptable::CastSpellPoint( const Point &target, bool deplete, bool instant, bool nointerrupt )
 {
-	LastTarget = 0;
+	LastSpellTarget = 0;
 	LastTargetPos.empty();
 	Actor *actor = NULL;
 	if (Type == ST_ACTOR) {
@@ -1257,7 +1272,7 @@ int Scriptable::CastSpellPoint( const Point &target, bool deplete, bool instant,
 //if spell is illegal stop casting
 int Scriptable::CastSpell( Scriptable* target, bool deplete, bool instant, bool nointerrupt )
 {
-	LastTarget = 0;
+	LastSpellTarget = 0;
 	LastTargetPos.empty();
 	Actor *actor = NULL;
 	if (Type == ST_ACTOR) {
@@ -1280,7 +1295,7 @@ int Scriptable::CastSpell( Scriptable* target, bool deplete, bool instant, bool 
 
 	LastTargetPos = target->Pos;
 	if (target->Type==ST_ACTOR) {
-		LastTarget = target->GetGlobalID();
+		LastSpellTarget = target->GetGlobalID();
 	}
 
 	if(!CheckWildSurge()) {
@@ -1466,10 +1481,10 @@ bool Scriptable::HandleHardcodedSurge(ieResRef surgeSpellRef, Spell *spl, Actor 
 			tmp3 = caster->WMLevelMod; // also save caster level; the original didn't reroll the bonus
 			caster->Modified[IE_FORCESURGE] = 7;
 			caster->Modified[IE_SURGEMOD] = - caster->GetCasterLevel(spl->SpellType); // nulify the bonus
-			if (LastTarget) {
-				target = area->GetActorByGlobalID(LastTarget);
+			if (LastSpellTarget) {
+				target = area->GetActorByGlobalID(LastSpellTarget);
 				if (!target) {
-					target = core->GetGame()->GetActorByGlobalID(LastTarget);
+					target = core->GetGame()->GetActorByGlobalID(LastSpellTarget);
 				}
 			}
 			if (!LastTargetPos.isempty()) {
@@ -1972,7 +1987,7 @@ void Movable::SetStance(unsigned int arg)
 		if (StanceID == IE_ANI_ATTACK) {
 			// Set stance to a random attack animation
 
-			int random = rand()%100;
+			int random = RAND(0, 99);
 			if (random < AttackMovements[0]) {
 				StanceID = IE_ANI_ATTACK_BACKSLASH;
 			} else if (random < AttackMovements[0] + AttackMovements[1]) {
@@ -2007,7 +2022,7 @@ void Movable::MoveLine(int steps, int Pass, ieDword orient)
 	path = area->GetLine( p, steps, orient, Pass );
 }
 
-void AdjustPositionTowards(Point &Pos, ieDword time_diff, unsigned int walk_speed, short srcx, short srcy, short destx, short desty) {
+static void AdjustPositionTowards(Point &Pos, ieDword time_diff, unsigned int walk_speed, short srcx, short srcy, short destx, short desty) {
 	if (destx > srcx)
 		Pos.x += ( unsigned short )
 			( ( ( ( ( destx * 16 ) + 8 ) - Pos.x ) * ( time_diff ) ) / walk_speed );
@@ -2207,8 +2222,8 @@ void Movable::RandomWalk(bool can_stop, bool run)
 		return;
 	}
 	//if not continous random walk, then stops for a while
-	if (can_stop && (rand()&3) ) {
-		SetWait((rand()&7)+7);
+	if (can_stop && RAND(0,3)) {
+		SetWait(RAND(7,14));
 		return;
 	}
 	if (run) {
@@ -2241,6 +2256,12 @@ void Movable::MoveTo(const Point &Des)
 	if (BlocksSearchMap()) {
 		area->BlockSearchMap( Pos, size, IsPC()?PATH_MAP_PC:PATH_MAP_NPC);
 	}
+}
+
+void Movable::Stop()
+{
+	Scriptable::Stop();
+	ClearPath();
 }
 
 void Movable::ClearPath()

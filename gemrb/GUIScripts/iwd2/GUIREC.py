@@ -990,6 +990,10 @@ def DisplayMisc (pc):
 	else:
 		time = GemRB.GetString (10697)
 	time += " " + GemRB.GetString (10699) + " "
+	if days == 0:
+		# only display hours
+		time = ""
+
 	if hours == 1:
 		time += GemRB.GetString (10701)
 	else:
@@ -1015,7 +1019,7 @@ def DisplayMisc (pc):
 		val = stat['KillsTotalCount']*100/TotalCount
 	else:
 		val = 0
-	RecordsTextArea.Append (delimited_txt (11954, ":", str(val) + "%"))
+	RecordsTextArea.Append (delimited_txt (11952, ":", str(val) + "%"))
 
 	return
 

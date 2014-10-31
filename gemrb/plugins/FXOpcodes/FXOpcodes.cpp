@@ -65,7 +65,8 @@ using namespace GemRB;
 #define PI_HOPELESS 44
 #define PI_LEVELDRAIN 53
 #define PI_FEEBLEMIND 54
-#define PI_STUN     55
+#define PI_STUN     55 //bg1+bg2
+#define PI_STUN_IWD 44 //iwd1+iwd2
 #define PI_AID      57
 #define PI_HOLY     59
 #define PI_BOUNCE   65
@@ -838,7 +839,7 @@ static void Cleanup()
 	polymorph_stats=NULL;
 }
 
-void RegisterCoreOpcodes()
+static void RegisterCoreOpcodes()
 {
 	core->RegisterOpcodes( sizeof( effectnames ) / sizeof( EffectDesc ) - 1, effectnames );
 	enhanced_effects=core->HasFeature(GF_ENHANCED_EFFECTS);
@@ -885,7 +886,7 @@ static inline void PlayRemoveEffect(const char *defsound, Actor *target, Effect*
 }
 
 //resurrect code used in many places
-void Resurrect(Scriptable *Owner, Actor *target, Effect *fx, Point &p)
+static void Resurrect(Scriptable *Owner, Actor *target, Effect *fx, Point &p)
 {
 	Scriptable *caster = GetCasterObject();
 	if (!caster) {
@@ -1390,7 +1391,7 @@ int fx_cure_frozen_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 #define CSA_DEX 0
 #define CSA_STR 1
 #define CSA_CNT 2
-int SpellAbilityDieRoll(Actor *target, int which)
+static int SpellAbilityDieRoll(Actor *target, int which)
 {
 	if (which>=CSA_CNT) return 6;
 
@@ -1478,7 +1479,7 @@ int fx_set_hasted_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 }
 
 // 0x11 CurrentHPModifier
-int GetSpecialHealAmount(int type, Scriptable *caster)
+static int GetSpecialHealAmount(int type, Scriptable *caster)
 {
 	if (!caster || caster->Type!=ST_ACTOR) return 0;
 	Actor *actor = (Actor *) caster;
@@ -1782,7 +1783,6 @@ int fx_set_poisoned_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		delete newfx;
 		damage = 0;
 		tmp = 1;
-		break;
 		break;
 	default:
 		tmp = 1;
@@ -2117,7 +2117,7 @@ int fx_strength_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 }
 
 // 0x2D State:Stun
-int power_word_stun_iwd2(Actor *target, Effect *fx)
+static int power_word_stun_iwd2(Actor *target, Effect *fx)
 {
 	int hp = BASE_GET(IE_HITPOINTS);
 	if (hp>150) return FX_NOT_APPLIED;
@@ -2129,7 +2129,7 @@ int power_word_stun_iwd2(Actor *target, Effect *fx)
 	fx->TimingMode = FX_DURATION_ABSOLUTE;
 	fx->Duration = stuntime*6*core->Time.round_size + core->GetGame()->GameTime;
 	STATE_SET( STATE_STUNNED );
-	target->AddPortraitIcon(PI_STUN);
+	target->AddPortraitIcon(PI_STUN_IWD);
 	return FX_APPLIED;
 }
 
@@ -2154,7 +2154,11 @@ int fx_set_stun_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		}
 	}
 	STATE_SET( STATE_STUNNED );
-	target->AddPortraitIcon(PI_STUN);
+	if (core->HasFeature(GF_IWD2_SCRIPTNAME)) { // all iwds
+		target->AddPortraitIcon(PI_STUN_IWD);
+	} else {
+		target->AddPortraitIcon(PI_STUN);
+	}
 	if (fx->Parameter2==1) {
 		target->SetSpellState(SS_AWAKE);
 	}
@@ -2836,12 +2840,18 @@ int fx_set_diseased_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		//TBD
 		target->AddPortraitIcon(PI_SLOWED);
 		break;
+	case RPD_MOLD2:
 	case RPD_MOLD: //mold touch (how)
 		EXTSTATE_SET(EXTSTATE_MOLD);
 		target->SetSpellState(SS_MOLDTOUCH);
-		damage = 1;
-		break;
-	case RPD_MOLD2:
+		if (core->GetGame()->GameTime%AI_UPDATE_TIME) {
+			return FX_APPLIED;
+		}
+		if (fx->Parameter1<1) {
+			return FX_NOT_APPLIED;
+		}
+		damage = core->Roll(fx->Parameter1--, 6, 0);
+		//TODO: spread to nearest (range 10) non-affected (use spell state?)
 		break;
 	case RPD_PEST:     //cloud of pestilence (iwd2)
 		break;
@@ -3805,11 +3815,12 @@ int fx_set_aid_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if (fx->FirstApply) {
 		BASE_ADD( IE_HITPOINTS, fx->Parameter1);
 	}
-	STAT_ADD( IE_SAVEVSDEATH, fx->Parameter1);
-	STAT_ADD( IE_SAVEVSWANDS, fx->Parameter1);
-	STAT_ADD( IE_SAVEVSPOLY, fx->Parameter1);
-	STAT_ADD( IE_SAVEVSBREATH, fx->Parameter1);
-	STAT_ADD( IE_SAVEVSSPELL, fx->Parameter1);
+	HandleBonus(target, IE_SAVEVSDEATH, fx->Parameter1, fx->TimingMode);
+	HandleBonus(target, IE_SAVEVSWANDS, fx->Parameter1, fx->TimingMode);
+	HandleBonus(target, IE_SAVEVSPOLY, fx->Parameter1, fx->TimingMode);
+	HandleBonus(target, IE_SAVEVSBREATH, fx->Parameter1, fx->TimingMode);
+	HandleBonus(target, IE_SAVEVSSPELL, fx->Parameter1, fx->TimingMode);
+
 	//bless effect too?
 	target->ToHit.HandleFxBonus(fx->Parameter1, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 	STAT_ADD( IE_DAMAGEBONUS, fx->Parameter1);
@@ -3915,14 +3926,14 @@ int fx_set_petrified_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 }
 
 // 0x87 Polymorph
-void CopyPolymorphStats(Actor *source, Actor *target)
+static void CopyPolymorphStats(Actor *source, Actor *target)
 {
 	int i;
 
 	if(!polymorph_stats) {
 		AutoTable tab("polystat");
 		if (!tab) {
-			polymorph_stats = (int *) malloc(0);
+			polymorph_stats = NULL;
 			polystatcount=0;
 			return;
 		}
@@ -4295,13 +4306,8 @@ int fx_cast_spell (Scriptable* Owner, Actor* target, Effect* fx)
 	// save the current spell ref, so the rest of its effects can be applied afterwards
 	ieResRef OldSpellResRef;
 	memcpy(OldSpellResRef, Owner->SpellResRef, sizeof(OldSpellResRef));
-	Owner->SetSpellResRef(fx->Resource);
-	//cast spell on target
-	//flags: deplete, instant, no interrupt
-	Owner->CastSpell(target, false, fx->Parameter2==1, true);
-	//actually finish casting (if this is not good enough, use an action???)
-	//flag: no casting animation
-	Owner->CastSpellEnd(fx->Parameter1, fx->Parameter2);
+	// flags: no deplete, instant?, no interrupt
+	Owner->DirectlyCastSpell(target, fx->Resource, fx->Parameter1, fx->Parameter2, false, fx->Parameter2==1, true);
 	Owner->SetSpellResRef(OldSpellResRef);
 
 	return FX_NOT_APPLIED;
@@ -4327,11 +4333,8 @@ int fx_cast_spell_point (Scriptable* Owner, Actor* /*target*/, Effect* fx)
 	// save the current spell ref, so the rest of its effects can be applied afterwards
 	ieResRef OldSpellResRef;
 	memcpy(OldSpellResRef, Owner->SpellResRef, sizeof(OldSpellResRef));
-	Owner->SetSpellResRef(fx->Resource);
 	Point p(fx->PosX, fx->PosY);
-	Owner->CastSpellPoint(p, false);
-	//actually finish casting (if this is not good enough, use an action???)
-	Owner->CastSpellPointEnd(fx->Parameter1, fx->Parameter2);
+	Owner->DirectlyCastSpellPoint(p, fx->Resource, fx->Parameter1, fx->Parameter2, false);
 	Owner->SetSpellResRef(OldSpellResRef);
 	return FX_NOT_APPLIED;
 }
@@ -4650,7 +4653,12 @@ int fx_cure_intoxication (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 int fx_pause_target (Scriptable* /*Owner*/, Actor * target, Effect* fx)
 {
 	if(0) print("fx_pause_target(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
+	// the parameters are not set (bg2), so we can't use STAT_MOD alone
+	if (!fx->Parameter1) {
+		fx->Parameter1 = 1;
+	}
 	STAT_MOD( IE_CASTERHOLD );
+	core->GetGame()->SelectActor(target, false, SELECT_NORMAL);
 	return FX_PERMANENT;
 }
 
@@ -5021,7 +5029,7 @@ int fx_castinglevel_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 #define FAMILIAR_RESOURCE  2
 
 //returns the familiar if there was no error
-Actor *GetFamiliar(Scriptable *Owner, Actor *target, Effect *fx, ieResRef resource)
+static Actor *GetFamiliar(Scriptable *Owner, Actor *target, Effect *fx, ieResRef resource)
 {
 	//summon familiar
 	Actor *fam = gamedata->GetCreature(resource);
@@ -5564,11 +5572,12 @@ int fx_leveldrain_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	}
 	STAT_ADD(IE_LEVELDRAIN, fx->Parameter1);
 	STAT_SUB(IE_MAXHITPOINTS, x);
-	STAT_SUB(IE_SAVEVSDEATH, fx->Parameter1);
-	STAT_SUB(IE_SAVEVSWANDS, fx->Parameter1);
-	STAT_SUB(IE_SAVEVSPOLY, fx->Parameter1);
-	STAT_SUB(IE_SAVEVSBREATH, fx->Parameter1);
-	STAT_SUB(IE_SAVEVSSPELL, fx->Parameter1);
+	HandleBonus(target, IE_SAVEVSDEATH, -fx->Parameter1, fx->TimingMode);
+	HandleBonus(target, IE_SAVEVSWANDS, -fx->Parameter1, fx->TimingMode);
+	HandleBonus(target, IE_SAVEVSPOLY, -fx->Parameter1, fx->TimingMode);
+	HandleBonus(target, IE_SAVEVSBREATH, -fx->Parameter1, fx->TimingMode);
+	HandleBonus(target, IE_SAVEVSSPELL, -fx->Parameter1, fx->TimingMode);
+
 	target->AddPortraitIcon(PI_LEVELDRAIN);
 	//decrease current hitpoints on first apply
 	if (fx->FirstApply) {
@@ -5854,6 +5863,7 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 	bool per_round = true; // 4xxx trigger?
 	const TriggerEntry *entry = NULL;
 	ieDword timeOfDay;
+	Actor *near;
 
 	// check the condition
 	switch (fx->Parameter2) {
@@ -5865,8 +5875,7 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 		break;
 	case COND_NEAR:
 		// See(NearestEnemyOf())
-		// FIXME
-		condition = PersonalDistance(actor, target) < 30;
+		condition = GetNearestEnemyOf(map, target, ORIGIN_SEES_ENEMY) != NULL;
 		break;
 	case COND_HP_HALF:
 		// HPPercentLT(Myself, 50)
@@ -5895,13 +5904,13 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 		break;
 	case COND_NEAR4:
 		// PersonalSpaceDistance([ANYONE], 4)
-		// FIXME
-		condition = PersonalDistance(actor, target) < 4;
+		near = GetNearestOf(map, target, ORIGIN_SEES_ENEMY);
+		condition = near && PersonalDistance(near, target) < 4;
 		break;
 	case COND_NEAR10:
 		// PersonalSpaceDistance([ANYONE], 10)
-		// FIXME
-		condition = PersonalDistance(target, actor) < 10;
+		near = GetNearestOf(map, target, ORIGIN_SEES_ENEMY);
+		condition = near && PersonalDistance(near, target) < 10;
 		break;
 	case COND_EVERYROUND:
 		condition = true;
@@ -5965,10 +5974,8 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 				}
 			}
 			//core->ApplySpell(refs[i], actor, Owner, fx->Power);
-			Owner->SetSpellResRef(refs[i]);
-			//cast spell on target
-			Owner->CastSpell(actor, false, true, true); //flags: deplete, instant, no interrupt
-			Owner->CastSpellEnd(fx->Power, 1); //flag: no casting animation
+			// no casting animation, no deplete, instant, no interrupt
+			Owner->DirectlyCastSpell(actor, refs[i], fx->Power, 1, false, true, true);
 		}
 		Owner->SetSpellResRef(OldSpellResRef);
 
@@ -6059,10 +6066,10 @@ int fx_wing_buffet (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	switch(fx->Parameter2) {
 		case WB_AWAY:
 		default:
-			dir = GetOrient(target->Pos, GetCasterObject()->Pos);
+			dir = GetOrient(target->Pos, Point(fx->SourceX, fx->SourceY));
 			break;
 		case WB_TOWARDS:
-			dir = GetOrient(GetCasterObject()->Pos, target->Pos);
+			dir = GetOrient(Point(fx->SourceX, fx->SourceY), target->Pos);
 			break;
 		case WB_FIXDIR:
 			dir = fx->Parameter3;
@@ -6277,16 +6284,9 @@ int fx_drain_spells (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_drain_spells(%2d): Count: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 	ieDword i=fx->Parameter1;
-	if (fx->Parameter2) {
-		while(i--) {
-			if (!target->spellbook.DepleteSpell(IE_SPELL_TYPE_PRIEST)) {
-				break;
-			}
-		}
-		return FX_NOT_APPLIED;
-	}
+	int type = fx->Parameter2 ? IE_SPELL_TYPE_PRIEST : IE_SPELL_TYPE_WIZARD;
 	while(i--) {
-		if (!target->spellbook.DepleteSpell(IE_SPELL_TYPE_WIZARD)) {
+		if (!target->spellbook.DepleteSpell(type)) {
 			break;
 		}
 	}
@@ -6394,9 +6394,7 @@ int fx_set_area_effect (Scriptable* Owner, Actor* target, Effect* fx)
 	// save the current spell ref, so the rest of its effects can be applied afterwards
 	ieResRef OldSpellResRef;
 	memcpy(OldSpellResRef, Owner->SpellResRef, sizeof(OldSpellResRef));
-	Owner->SetSpellResRef(fx->Resource);
-	Owner->CastSpellPoint(target->Pos, false, true, true);
-	Owner->CastSpellPointEnd(0, 1);
+	Owner->DirectlyCastSpellPoint(target->Pos, fx->Resource, 0, 1, false, true, true);
 	Owner->SetSpellResRef(OldSpellResRef);
 	return FX_NOT_APPLIED;
 }
@@ -7272,14 +7270,15 @@ int fx_generate_wish (Scriptable* Owner, Actor* target, Effect* fx)
 	return FX_NOT_APPLIED;
 }
 
+// commented out due to g++ -Wall: 'int fx_immunity_sequester(GemRB::Scriptable*, GemRB::Actor*, GemRB::Effect*)' defined but not used [-Werror=unused-function]
 //0x138 //see fx_crash, this effect is not fully enabled in original bg2/tob
-int fx_immunity_sequester (Scriptable* /*Owner*/, Actor* target, Effect* fx)
-{
-	if(0) print("fx_immunity_sequester(%2d): Mod: %d", fx->Opcode, fx->Parameter2);
-	//this effect is supposed to provide immunity against sequester (maze/etc?)
-	STAT_SET(IE_NOSEQUESTER, fx->Parameter2);
-	return FX_APPLIED;
-}
+// static int fx_immunity_sequester (Scriptable* /*Owner*/, Actor* target, Effect* fx)
+// {
+// 	if(0) print("fx_immunity_sequester(%2d): Mod: %d", fx->Opcode, fx->Parameter2);
+// 	//this effect is supposed to provide immunity against sequester (maze/etc?)
+// 	STAT_SET(IE_NOSEQUESTER, fx->Parameter2);
+// 	return FX_APPLIED;
+// }
 
 //0x139 //HLA generic effect
 //0x13a StoneSkin2Modifier

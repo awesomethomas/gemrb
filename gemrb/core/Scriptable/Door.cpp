@@ -22,24 +22,15 @@
 #include "strrefs.h"
 #include "win32def.h"
 
-#include "Audio.h"
 #include "DisplayMessage.h"
 #include "Game.h"
 #include "GameData.h"
-#include "Interface.h"
-#include "Item.h"
-#include "Map.h"
 #include "Projectile.h"
-#include "Spell.h"
-#include "SpriteCover.h"
 #include "TileMap.h"
 #include "GameScript/GSUtils.h"
 #include "GUI/GameControl.h"
 #include "Scriptable/InfoPoint.h"
 #include "System/StringBuffer.h"
-
-#include <cassert>
-#include <cmath>
 
 namespace GemRB {
 
@@ -327,6 +318,7 @@ void Highlightable::SetTrapDetected(int x)
 		return;
 	TrapDetected = x;
 	if(TrapDetected) {
+		core->PlaySound(DS_FOUNDSECRET);
 		core->Autopause(AP_TRAP, this);
 	}
 }
@@ -341,9 +333,13 @@ void Highlightable::TryDisarm(Actor *actor)
 	int trapDC = TrapRemovalDiff;
 
 	if (core->HasFeature(GF_3ED_RULES)) {
+		skill = actor->GetSkill(IE_TRAPS);
 		roll = core->Roll(1, 20, 0);
 		bonus = actor->GetAbilityBonus(IE_INT);
 		trapDC = TrapRemovalDiff/7 + 10; // oddity from the original
+		if (skill == 0) { // a trained skill
+			trapDC = 100;
+		}
 	} else {
 		roll = core->Roll(1, skill/2, 0);
 		skill /= 2;
@@ -363,6 +359,7 @@ void Highlightable::TryDisarm(Actor *actor)
 		Game *game = core->GetGame();
 		game->ShareXP(xp, SX_DIVIDE);
 		core->GetGameControl()->ResetTargetMode();
+		core->PlaySound(DS_DISARMED);
 	} else {
 		if (core->HasFeature(GF_3ED_RULES)) {
 			// ~Failed Disarm Device - d20 roll %d + Disarm Device skill %d + INT mod %d >= Trap DC %d~
@@ -386,10 +383,15 @@ void Door::TryPickLock(Actor *actor)
 	}
 	int stat = actor->GetStat(IE_LOCKPICKING);
 	if (core->HasFeature(GF_3ED_RULES)) {
-		stat *= 7; // convert to percent (magic 7 is from RE)
-		int dexmod = actor->GetAbilityBonus(IE_DEX);
-		stat += dexmod; // the original didn't use it, so let's not multiply it
-		displaymsg->DisplayRollStringName(39301, DMC_LIGHTGREY, actor, stat-dexmod, LockDifficulty, dexmod);
+		int skill = actor->GetSkill(IE_LOCKPICKING);
+		if (skill == 0) { // a trained skill, make sure we fail
+			stat = 0;
+		} else {
+			stat *= 7; // convert to percent (magic 7 is from RE)
+			int dexmod = actor->GetAbilityBonus(IE_DEX);
+			stat += dexmod; // the original didn't use it, so let's not multiply it
+			displaymsg->DisplayRollStringName(39301, DMC_LIGHTGREY, actor, stat-dexmod, LockDifficulty, dexmod);
+		}
 	}
 	if (stat < (signed)LockDifficulty) {
 		displaymsg->DisplayConstantStringName(STR_LOCKPICK_FAILED, DMC_BG2XPGREEN, actor);

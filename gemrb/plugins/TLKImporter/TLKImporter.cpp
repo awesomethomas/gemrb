@@ -171,9 +171,9 @@ char *TLKImporter::Gabber()
 
 	act=core->GetGameControl()->dialoghandler->GetSpeaker();
 	if (act) {
-		return override->CS(act->LongName);
+		return strdup(act->LongName);
 	}
-	return override->CS("?");
+	return strdup("?");
 }
 
 char *TLKImporter::CharName(int slot)
@@ -182,9 +182,9 @@ char *TLKImporter::CharName(int slot)
 
 	act=GetActorFromSlot(slot);
 	if (act) {
-		return override->CS(act->LongName);
+		return strdup(act->LongName);
 	}
-	return override->CS("?");
+	return strdup("?");
 }
 
 int TLKImporter::ClassStrRef(int slot)
@@ -277,8 +277,9 @@ int TLKImporter::BuiltinToken(char* Token, char* dest)
 		Decoded = GetString( RaceStrRef(-1), 0);
 		goto exit_function;
 	}
-	if (!strncmp( Token, "PLAYER",6 )) {
-		Decoded = CharName(Token[6]-'1');
+	if (!strncmp( Token, "PLAYER", 6 )) {
+		// FIXME: this assumes a single digit number of players.
+		Decoded = CharName(Token[strlen(Token)-1]-'1');
 		goto exit_function;
 	}
 
@@ -405,12 +406,7 @@ ieStrRef TLKImporter::UpdateString(ieStrRef strref, const char *newvalue)
 		return 0xffffffff;
 	}
 
-	if(strref>STRREF_START || (strref>=BIO_START && strref<=BIO_END) ) {
-		return override->UpdateString(strref, newvalue);
-	}
-
-	Log(ERROR, "TLKImporter", "Cannot set custom string.");
-	return 0xffffffff;
+	return override->UpdateString(strref, newvalue);
 }
 
 char* TLKImporter::GetString(ieStrRef strref, ieDword flags)

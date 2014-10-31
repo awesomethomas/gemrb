@@ -78,8 +78,10 @@
 #include "GUI/GameControl.h"
 #include "GUI/Label.h"
 #include "GUI/MapControl.h"
+#include "GUI/TextArea.h"
 #include "GUI/Window.h"
 #include "GUI/WorldMapControl.h"
+#include "RNG/RNG_SFMT.h"
 #include "Scriptable/Container.h"
 #include "System/FileStream.h"
 #include "System/VFS.h"
@@ -89,8 +91,6 @@
 #include <unistd.h>
 #endif
 
-#include <cstdlib>
-#include <time.h>
 #include <vector>
 
 namespace GemRB {
@@ -162,6 +162,8 @@ Interface::Interface()
 	slotmatrix = NULL;
 
 	ModalWindow = NULL;
+	modalShadow = MODAL_SHADOW_NONE;
+
 	tooltip_x = 0;
 	tooltip_y = 0;
 	tooltip_currtextw = 0;
@@ -262,6 +264,7 @@ Interface::Interface()
 	SpecialSpells = NULL;
 	Encoding = "default";
 	TLKEncoding.encoding = "ISO-8859-1";
+	TLKEncoding.multibyte = false;
 	MagicBit = HasFeature(GF_MAGICBIT);
 
 	gamedata = new GameData();
@@ -514,11 +517,7 @@ GameControl* Interface::StartGameControl()
 	gamedata->DelTable(0xffffu); //dropping ALL tables
 	Window* gamewin = new Window( 0xffff, 0, 0, (ieWord) Width, (ieWord) Height );
 	gamewin->WindowPack[0]=0;
-	GameControl* gc = new GameControl();
-	gc->XPos = 0;
-	gc->YPos = 0;
-	gc->Width = (ieWord) Width;
-	gc->Height = (ieWord) Height;
+	GameControl* gc = new GameControl(Region(0, 0, Width, Height));
 	gc->Owner = gamewin;
 	gc->ControlID = 0x00000000;
 	gc->ControlType = IE_GUI_GAMECONTROL;
@@ -529,7 +528,7 @@ GameControl* Interface::StartGameControl()
 	evntmgr->SetFocused(gamewin, gc);
 	if (guiscript->LoadScript( "MessageWindow" )) {
 		guiscript->RunFunction( "MessageWindow", "OnLoad" );
-		gc->UnhideGUI();
+		gc->SetGUIHidden(false);
 	}
 
 	return gc;
@@ -578,10 +577,7 @@ void Interface::HandleEvents()
 		EventFlag&=~EF_CONTROL;
 		guiscript->RunFunction( "MessageWindow", "UpdateControlStatus" );
 		//this is the only value we can use here
-		if (game->ControlStatus & CS_HIDEGUI)
-			gc->HideGUI();
-		else
-			gc->UnhideGUI();
+		gc->SetGUIHidden(game->ControlStatus & CS_HIDEGUI);
 		return;
 	}
 	if ((EventFlag&EF_SHOWMAP) && gc) {
@@ -1121,10 +1117,6 @@ char *Interface::GetMusicPlaylist(int SongType) const {
 	return musiclist[SongType];
 }
 
-static const Color white = {0xff,0xff,0xff,0xff};
-static const Color black = {0x00,0x00,0x00,0xff};
-static const Region bg( 0, 0, 100, 30 );
-
 /** this is the main loop */
 void Interface::Main()
 {
@@ -1138,11 +1130,13 @@ void Interface::Main()
 	}
 
 	Font* fps = GetFont( ( unsigned int ) 0 );
+	// TODO: if we ever want to support dynamic resolution changes this will break
+	const Region fpsRgn( 0, Height - 30, 100, 30 );
 	char fpsstring[40]={"???.??? fps"};
 	unsigned long frame = 0, time, timebase;
 	timebase = GetTickCount();
 	double frames = 0.0;
-	Palette* palette = CreatePalette( white, black );
+	Palette* palette = CreatePalette( ColorWhite, ColorBlack );
 	do {
 		//don't change script when quitting is pending
 
@@ -1166,8 +1160,8 @@ void Interface::Main()
 				frame = 0;
 				sprintf( fpsstring, "%.3f fps", frames );
 			}
-			video->DrawRect( bg, black );
-			fps->Print( bg,
+			video->DrawRect( fpsRgn, ColorBlack );
+			fps->Print( fpsRgn,
 				( unsigned char * ) fpsstring, palette,
 				IE_FONT_ALIGN_LEFT | IE_FONT_ALIGN_MIDDLE, true );
 		}
@@ -1570,8 +1564,8 @@ int Interface::Init(InterfaceConfig* config)
 
 	CONFIG_PATH("GemRBOverridePath", GemRBOverridePath, GemRBPath);
 	CONFIG_PATH("GemRBUnhardcodedPath", GemRBUnhardcodedPath, GemRBPath);
-#ifdef PLUGINDIR
-	CONFIG_PATH("PluginsPath", PluginsPath, PLUGINDIR);
+#ifdef PLUGIN_DIR
+	CONFIG_PATH("PluginsPath", PluginsPath, PLUGIN_DIR);
 #else
 	CONFIG_PATH("PluginsPath", PluginsPath, "");
 	if (!PluginsPath[0]) {
@@ -1663,10 +1657,6 @@ int Interface::Init(InterfaceConfig* config)
 	}
 	plugin->RunInitializers();
 
-	time_t t;
-	t = time( NULL );
-	srand( ( unsigned int ) t );
-
 	Log(MESSAGE, "Core", "GemRB Core Initialization...");
 	Log(MESSAGE, "Core", "Initializing Video Driver...");
 	video = ( Video * ) PluginMgr::Get()->GetDriver(&Video::ID, VideoDriverName.c_str());
@@ -1684,7 +1674,10 @@ int Interface::Init(InterfaceConfig* config)
 	// SDL2 driver requires the display to be created prior to sprite creation (opengl context)
 	// we also need the display to exist to create sprites using the display format
 	vars->Lookup("Full Screen", FullScreen);
-	video->CreateDisplay( Width, Height, Bpp, FullScreen, GameName);
+	if (video->CreateDisplay( Width, Height, Bpp, FullScreen, GameName) == GEM_ERROR) {
+		Log(FATAL, "Core", "Cannot initialize shaders.");
+		return GEM_ERROR;
+	}
 	vars->Lookup("Brightness Correction", brightness);
 	vars->Lookup("Gamma Correction", contrast);
 	video->SetGamma(brightness, contrast);
@@ -1735,6 +1728,10 @@ int Interface::Init(InterfaceConfig* config)
 		gamedata->AddSource(path, "Portraits", PLUGIN_RESOURCE_CACHEDDIRECTORY);
 
 		PathJoin( path, GamePath, GameDataPath, NULL);
+		gamedata->AddSource(path, "Data", PLUGIN_RESOURCE_CACHEDDIRECTORY);
+
+		// accomodating silly installers that create a data/Data/* structure
+		PathJoin( path, GamePath, GameDataPath, "Data", NULL);
 		gamedata->AddSource(path, "Data", PLUGIN_RESOURCE_CACHEDDIRECTORY);
 
 		//IWD2 movies are on the CD but not in the BIF
@@ -1900,23 +1897,7 @@ int Interface::Init(InterfaceConfig* config)
 	int ret = LoadSprites();
 	if (ret) return ret;
 
-	Log(MESSAGE, "Core", "Setting up the Console...");
 	QuitFlag = QF_CHANGESCRIPT;
-	console = new Console();
-	console->XPos = 0;
-	console->YPos = (ieWord) (Height - 25);
-	console->Width = (ieWord) Width;
-	console->Height = 25;
-	if (fonts.size() > 0) {
-		console->SetFont( fonts[0] );
-	}
-
-	Sprite2D *tmpsprite = GetCursorSprite();
-	if (!tmpsprite) {
-		Log(FATAL, "Core", "Failed to load cursor sprite.");
-		return GEM_ERROR;
-	}
-	console->SetCursor (tmpsprite);
 
 	Log(MESSAGE, "Core", "Starting up the Sound Driver...");
 	AudioDriver = ( Audio * ) PluginMgr::Get()->GetDriver(&Audio::ID, AudioDriverName.c_str());
@@ -2115,8 +2096,17 @@ int Interface::Init(InterfaceConfig* config)
 	if (!ret) {
 		Log(WARNING, "Core", "Failed to initialize keymaps.");
 	}
-	Log(MESSAGE, "Core", "Core Initialization Complete!");
 
+	Log(MESSAGE, "Core", "Setting up the Console...");
+	console = new Console(Region(0, 0, Width, 25));
+	console->SetFont( fonts[0] );
+	Sprite2D* cursor = GetCursorSprite();
+	if (!cursor) {
+		Log(ERROR, "Core", "Failed to load cursor sprite.");
+	} else
+		console->SetCursor (cursor);
+
+	Log(MESSAGE, "Core", "Core Initialization Complete!");
 	return GEM_OK;
 }
 
@@ -2287,7 +2277,14 @@ void Interface::FreeString(char *&str) const
 
 ieStrRef Interface::UpdateString(ieStrRef strref, const char *text) const
 {
-	return strings->UpdateString( strref, text );
+	char *current = GetString(strref, 0);
+	bool changed = strcmp(text, current) != 0;
+	FreeString(current);
+	if (changed) {
+		return strings->UpdateString( strref, text );
+	} else {
+		return strref;
+	}
 }
 
 char* Interface::GetString(ieStrRef strref, ieDword options) const
@@ -2391,6 +2388,7 @@ static const char *game_flags[GF_COUNT+1]={
 		"ZeroTimerIsValid",   //73GF_ZERO_TIMER_IS_VALID
 		"SkipUpdateHack",     //74GF_SKIPUPDATE_HACK
 		"MeleeHeaderUsesProjectile", //75GF_MELEEHEADER_USESPROJECTILE
+		"ForceDialogPause",   //76GF_FORCE_DIALOGPAUSE
 		NULL                  //for our own safety, this marks the end of the pole
 };
 
@@ -2474,9 +2472,6 @@ bool Interface::LoadGemRBINI()
 		}
 	}
 
-	s = ini->GetKeyAsString( "resources", "NoteString", NULL );
-	TextArea::SetNoteString(s);
-
 	s = ini->GetKeyAsString( "resources", "INIConfig", NULL );
 	if (s)
 		strcpy( INIConfig, s );
@@ -2528,6 +2523,8 @@ bool Interface::LoadEncoding()
 	TLKEncoding.encoding = ini->GetKeyAsString("encoding", "TLKEncoding", TLKEncoding.encoding.c_str());
 	TLKEncoding.zerospace = ini->GetKeyAsBool("encoding", "NoSpaces", 0);
 
+	TextArea::SetNoteString( ini->GetKeyAsString( "strings", "NoteString", NULL ) );
+
 	// TODO: list incomplete
 	// maybe want to externalize this
 	// list compiled form wiki: http://www.gemrb.org/wiki/doku.php?id=engine:encodings
@@ -2537,7 +2534,9 @@ bool Interface::LoadEncoding()
 		// Korean
 		"EUCKR",
 		// Japanese
-		"SJIS"
+		"SJIS",
+		// UTF8
+		"UTF-8",
 	};
 	const size_t listSize = sizeof(multibyteEncodings) / sizeof(multibyteEncodings[0]);
 
@@ -3082,6 +3081,7 @@ int Interface::SetVisible(unsigned short WindowIndex, int visible)
 	switch (visible) {
 		case WINDOW_GRAYED:
 			win->Invalidate();
+			win->DrawWindow();
 			//here is a fallthrough
 		case WINDOW_INVISIBLE:
 			//hiding the viewport if the gamecontrol window was made invisible
@@ -3153,7 +3153,7 @@ int Interface::SetControlStatus(unsigned short WindowIndex,
 }
 
 /** Show a Window in Modal Mode */
-int Interface::ShowModal(unsigned short WindowIndex, int Shadow)
+int Interface::ShowModal(unsigned short WindowIndex, MODAL_SHADOW Shadow)
 {
 	if (WindowIndex >= windows.size()) {
 		Log(ERROR, "Core", "Window not found");
@@ -3170,26 +3170,9 @@ int Interface::ShowModal(unsigned short WindowIndex, int Shadow)
 	SetOnTop( WindowIndex );
 	evntmgr->AddWindow( win );
 	evntmgr->SetFocused( win, NULL );
-
-	ModalWindow = NULL;
-	DrawWindows();
 	win->Invalidate();
 
-	Color gray = {
-		0, 0, 0, 128
-	};
-	Color black = {
-		0, 0, 0, 255
-	};
-
-	Region r( 0, 0, Width, Height );
-
-	if (Shadow == MODAL_SHADOW_GRAY) {
-		video->DrawRect( r, gray );
-	} else if (Shadow == MODAL_SHADOW_BLACK) {
-		video->DrawRect( r, black );
-	}
-
+	modalShadow = Shadow;
 	ModalWindow = win;
 	return 0;
 }
@@ -3282,10 +3265,25 @@ void Interface::HandleGUIBehaviour(void)
 void Interface::DrawWindows(bool allow_delete)
 {
 	//here comes the REAL drawing of windows
+	static bool modalShield = false;
 	if (ModalWindow) {
+		if (!modalShield) {
+			// only draw the shield layer once
+			Color shieldColor = Color(); // clear
+			if (modalShadow == MODAL_SHADOW_GRAY) {
+				shieldColor.a = 128;
+			} else if (modalShadow == MODAL_SHADOW_BLACK) {
+				shieldColor.a = 0xff;
+			}
+			video->DrawRect( Region( 0, 0, Width, Height ), shieldColor );
+			RedrawAll(); // wont actually have any effect until the modal window is dismissed.
+			modalShield = true;
+		}
 		ModalWindow->DrawWindow();
 		return;
 	}
+	modalShield = false;
+
 	size_t i = topwin.size();
 	while(i--) {
 		unsigned int t = topwin[i];
@@ -3307,6 +3305,11 @@ void Interface::DrawWindows(bool allow_delete)
 				win->DrawWindow();
 			}
 		}
+	}
+
+	// draw the console
+	if (ConsolePopped) {
+		console->Draw(0, 0);
 	}
 }
 
@@ -3429,7 +3432,6 @@ int Interface::DelWindow(unsigned short WindowIndex)
 	}
 	if (win == ModalWindow) {
 		ModalWindow = NULL;
-		RedrawAll(); //marking windows for redraw
 	}
 	evntmgr->DelWindow( win );
 	win->release();
@@ -3469,13 +3471,6 @@ void Interface::PopupConsole()
 {
 	ConsolePopped = !ConsolePopped;
 	RedrawAll();
-	console->Changed = true;
-}
-
-/** Draws the Console */
-void Interface::DrawConsole()
-{
-	console->Draw( 0, (Height * -1) + console->Height);
 }
 
 /** Get the Sound Manager */
@@ -3685,7 +3680,7 @@ int Interface::Roll(int dice, int size, int add) const
 		return add + dice * size / 2;
 	}
 	for (int i = 0; i < dice; i++) {
-		add += rand() % size + 1;
+		add += RAND(1, size);
 	}
 	return add;
 }
@@ -3727,6 +3722,7 @@ int Interface::GetPortraits(TextArea* ta, bool smallorlarge)
 		count++;
 		ta->AppendText( name, -1 );
 	} while (++dir);
+	ta->SortText();
 	return count;
 }
 
@@ -3758,6 +3754,7 @@ int Interface::GetCharSounds(TextArea* ta)
 		count++;
 		ta->AppendText( name, -1 );
 	} while (++dir);
+	ta->SortText();
 	return count;
 }
 
@@ -3785,6 +3782,7 @@ int Interface::GetCharacters(TextArea* ta)
 		count++;
 		ta->AppendText( name, -1 );
 	} while (++dir);
+	ta->SortText();
 	return count;
 }
 
@@ -4852,25 +4850,35 @@ void Interface::SanitizeItem(CREItem *item) const
 
 	Item *itm = gamedata->GetItem(item->ItemResRef, true);
 	if (itm) {
-		//set charge counters for non-rechargeable items if their charge is zero
-		//set charge counters for items not using charges to one
-		for (int i = 0; i < CHARGE_COUNTERS; i++) {
-			ITMExtHeader *h = itm->GetExtHeader(i);
-			if (h) {
-				if (item->Usages[i] == 0) {
-					if (!(h->RechargeFlags&IE_ITEM_RECHARGE)) {
-						//HACK: the original (bg2) allows for 0 charged gems
-						if (h->Charges) {
-							item->Usages[i] = h->Charges;
-						} else {
-							item->Usages[i] = 1;
+
+		item->MaxStackAmount = itm->MaxStackAmount;
+		//if item is stacked mark it as so
+		if (itm->MaxStackAmount) {
+			item->Flags |= IE_INV_ITEM_STACKED;
+			if (item->Usages[0] == 0) {
+				item->Usages[0] = 1;
+			}
+		} else {
+			//set charge counters for non-rechargeable items if their charge is zero
+			//set charge counters for items not using charges to one
+			for (int i = 0; i < CHARGE_COUNTERS; i++) {
+				ITMExtHeader *h = itm->GetExtHeader(i);
+				if (h) {
+					if (item->Usages[i] == 0) {
+						if (!(h->RechargeFlags&IE_ITEM_RECHARGE)) {
+							//HACK: the original (bg2) allows for 0 charged gems
+							if (h->Charges) {
+								item->Usages[i] = h->Charges;
+							} else {
+								item->Usages[i] = 1;
+							}
 						}
+					} else if (h->Charges == 0) {
+						item->Usages[i] = 1;
 					}
-				} else if (h->Charges == 0) {
-					item->Usages[i] = 1;
+				} else {
+					item->Usages[i] = 0;
 				}
-			} else {
-				item->Usages[i] = 0;
 			}
 		}
 
@@ -4888,11 +4896,8 @@ void Interface::SanitizeItem(CREItem *item) const
 			}
 		}
 
-		if (!(item->Flags & IE_INV_ITEM_MOVABLE)) {
-			item->Flags |= IE_INV_ITEM_UNDROPPABLE;
-		}
-
-		if (item->Flags & IE_INV_ITEM_STOLEN2) {
+		// pst has no stolen flag, but "steel" in its place
+		if ((item->Flags & IE_INV_ITEM_STOLEN2) && !HasFeature(GF_PST_STATE_FLAGS)) {
 			item->Flags |= IE_INV_ITEM_STOLEN;
 		}
 
@@ -4900,13 +4905,6 @@ void Interface::SanitizeItem(CREItem *item) const
 		if (!itm->LoreToID) {
 			item->Flags |= IE_INV_ITEM_IDENTIFIED;
 		}
-
-		//if item is stacked mark it as so
-		if (itm->MaxStackAmount) {
-			item->Flags |= IE_INV_ITEM_STACKED;
-		}
-
-		item->MaxStackAmount = itm->MaxStackAmount;
 
 		gamedata->FreeItem(itm, item->ItemResRef, false);
 	}
@@ -5628,7 +5626,7 @@ void Interface::SetInfoTextColor(const Color &color)
 	if (InfoTextPalette) {
 		gamedata->FreePalette(InfoTextPalette);
 	}
-	InfoTextPalette = CreatePalette(color, black);
+	InfoTextPalette = CreatePalette(color, ColorBlack);
 }
 
 //todo row?

@@ -30,6 +30,7 @@
 #include "Interface.h"
 #include "PluginMgr.h"
 #include "TableMgr.h"
+#include "RNG/RNG_SFMT.h"
 #include "System/StringBuffer.h"
 
 namespace GemRB {
@@ -190,6 +191,8 @@ static const TriggerLink triggernames[] = {
 	{"hppercent", GameScript::HPPercent, 0},
 	{"hppercentgt", GameScript::HPPercentGT, 0},
 	{"hppercentlt", GameScript::HPPercentLT, 0},
+	{"ifvalidforpartydialog", GameScript::IsValidForPartyDialog, 0},
+	{"ifvalidforpartydialogue", GameScript::IsValidForPartyDialog, 0},
 	{"inactivearea", GameScript::InActiveArea, 0},
 	{"incutscenemode", GameScript::InCutSceneMode, 0},
 	{"inline", GameScript::InLine, 0},
@@ -751,6 +754,7 @@ static const ActionLink actionnames[] = {
 	{"polymorph", GameScript::Polymorph, 0},
 	{"polymorphcopy", GameScript::PolymorphCopy, 0},
 	{"polymorphcopybase", GameScript::PolymorphCopyBase, 0},
+	{"polymorphex", GameScript::Polymorph, 0}, //pst FIXME: has RangeModes int1 that we ignore
 	{"protectobject", GameScript::ProtectObject, 0},
 	{"protectpoint", GameScript::ProtectPoint, AF_BLOCKING},
 	{"quitgame", GameScript::QuitGame, 0},
@@ -761,9 +765,12 @@ static const ActionLink actionnames[] = {
 	{"randomwalkcontinuous", GameScript::RandomWalkContinuous, AF_BLOCKING|AF_ALIVE},
 	{"realsetglobaltimer", GameScript::RealSetGlobalTimer,AF_MERGESTRINGS},
 	{"reallyforcespell", GameScript::ReallyForceSpell, AF_BLOCKING|AF_ALIVE},
+	{"reallyforcespellres", GameScript::ReallyForceSpell, AF_BLOCKING|AF_ALIVE},
 	{"reallyforcespelldead", GameScript::ReallyForceSpellDead, AF_BLOCKING},
+	{"reallyforcespelldeadres", GameScript::ReallyForceSpellDead, AF_BLOCKING},
 	{"reallyforcespelllevel", GameScript::ReallyForceSpell, AF_BLOCKING|AF_ALIVE},//this is the same action
 	{"reallyforcespellpoint", GameScript::ReallyForceSpellPoint, AF_BLOCKING|AF_ALIVE},
+	{"reallyforcespellpointres", GameScript::ReallyForceSpellPoint, AF_BLOCKING|AF_ALIVE},
 	{"recoil", GameScript::Recoil, AF_ALIVE},
 	{"regainpaladinhood", GameScript::RegainPaladinHood, 0},
 	{"regainrangerhood", GameScript::RegainRangerHood, 0},
@@ -1295,7 +1302,7 @@ static void CleanupIEScript()
 	ObjectIDSTableNames = NULL;
 }
 
-void printFunction(StringBuffer& buffer, Holder<SymbolMgr> table, int index)
+static void printFunction(StringBuffer& buffer, Holder<SymbolMgr> table, int index)
 {
 	const char *str = table->GetStringIndex(index);
 	int value = table->GetValueIndex(index);
@@ -1308,7 +1315,7 @@ void printFunction(StringBuffer& buffer, Holder<SymbolMgr> table, int index)
 	}
 }
 
-void LoadActionFlags(const char *tableName, int flag, bool critical)
+static void LoadActionFlags(const char *tableName, int flag, bool critical)
 {
 	int i, j;
 
@@ -1948,7 +1955,7 @@ bool GameScript::Update(bool *continuing, bool *done)
 	bool continueExecution = false;
 	if (continuing) continueExecution = *continuing;
 
-	RandomNumValue=rand();
+	RandomNumValue=RNG_SFMT::getInstance()->rand();
 	for (size_t a = 0; a < script->responseBlocks.size(); a++) {
 		ResponseBlock* rB = script->responseBlocks[a];
 		if (rB->condition->Evaluate(MySelf)) {
@@ -1979,12 +1986,9 @@ bool GameScript::Update(bool *continuing, bool *done)
 
 					//movetoobjectfollow would break if this isn't called
 					//(what is broken if it is here?)
-					MySelf->ClearActions();
 					//IE even clears the path, shall we?
 					//yes we must :)
-					if (MySelf->Type == ST_ACTOR) {
-						((Movable *)MySelf)->ClearPath();
-					}
+					MySelf->Stop();
 				}
 				lastAction=a;
 			}
@@ -2257,7 +2261,7 @@ int ResponseSet::Execute(Scriptable* Sender)
 		maxWeight += responses[i]->weight;
 	}
 	if (maxWeight) {
-		randWeight = rand() % maxWeight;
+		randWeight = RAND(0, maxWeight-1);
 	}
 	else {
 		randWeight = 0;
@@ -2280,7 +2284,7 @@ int Response::Execute(Scriptable* Sender)
 {
 	int ret = 0; // continue or not
 	for (size_t i = 0; i < actions.size(); i++) {
-		if (canary == 0xdddddddd) {
+		if (!CheckCanary()) {
 			// FIXME: hack to prevent crashing when a script deletes itself.
 			// this object has been deleted and this should not be considered a fix (it may cause unforseen problems too).
 			Log(ERROR, "GameScript", "Aborting response execution due to object deletion.\n \
@@ -2307,7 +2311,7 @@ int Response::Execute(Scriptable* Sender)
 	return ret;
 }
 
-void PrintAction(StringBuffer& buffer, int actionID)
+static void PrintAction(StringBuffer& buffer, int actionID)
 {
 	buffer.appendFormatted("Action: %d %s\n", actionID, actionsTable->GetValue(actionID));
 }
@@ -2425,42 +2429,47 @@ Trigger* GenerateTrigger(char* String)
 	return trigger;
 }
 
-Action* GenerateAction(char* String)
+Action* GenerateAction(const char* String)
 {
-	strlwr( String );
+	Action* action = NULL;
+	char* actionString = strdup(String);
+	// the only thing we seem to need a copy for is the call to strlwr...
+	strlwr( actionString );
 	if (InDebug&ID_ACTIONS) {
 		Log(WARNING, "GameScript", "Compiling:%s", String);
 	}
 	int len = strlench(String,'(')+1; //including (
-	char *src = String+len;
+	char *src = actionString+len;
 	int i = -1;
 	char *str;
 	unsigned short actionID;
 	if (overrideActionsTable) {
-		i = overrideActionsTable->FindString(String, len);
+		i = overrideActionsTable->FindString(actionString, len);
 		if (i >= 0) {
 			str = overrideActionsTable->GetStringIndex( i )+len;
 			actionID = overrideActionsTable->GetValueIndex(i);
 		}
 	}
 	if (i<0) {
-		i = actionsTable->FindString(String, len);
+		i = actionsTable->FindString(actionString, len);
 		if (i < 0) {
 			Log(ERROR, "GameScript", "Invalid scripting action: %s", String);
-			return NULL;
+			goto done;
 		}
 		str = actionsTable->GetStringIndex( i )+len;
 		actionID = actionsTable->GetValueIndex(i);
 	}
-	Action *action = GenerateActionCore( src, str, actionID);
+	action = GenerateActionCore( src, str, actionID);
 	if (!action) {
 		Log(ERROR, "GameScript", "Malformed scripting action: %s", String);
-		return NULL;
+		goto done;
 	}
+	done:
+	free(actionString);
 	return action;
 }
 
-Action* GenerateActionDirect(char *String, Scriptable *object)
+Action* GenerateActionDirect(const char *String, Scriptable *object)
 {
 	Action* action = GenerateAction(String);
 	if (!action) return NULL;
@@ -2483,7 +2492,7 @@ void Object::dump(StringBuffer& buffer) const
 {
 	int i;
 
-	GSASSERT( canary == (unsigned long) 0xdeadbeef, canary );
+	AssertCanary(__FUNCTION__);
 	if(objectName[0]) {
 		buffer.appendFormatted("Object: %s\n",objectName);
 		return;
@@ -2526,7 +2535,7 @@ void Trigger::dump() const
 
 void Trigger::dump(StringBuffer& buffer) const
 {
-	GSASSERT( canary == (unsigned long) 0xdeadbeef, canary );
+	AssertCanary(__FUNCTION__);
 	buffer.appendFormatted("Trigger: %d\n", triggerID);
 	buffer.appendFormatted("Int parameters: %d %d %d\n", int0Parameter, int1Parameter, int2Parameter);
 	buffer.appendFormatted("Point: [%d.%d]\n", pointParameter.x, pointParameter.y);
@@ -2551,7 +2560,7 @@ void Action::dump(StringBuffer& buffer) const
 {
 	int i;
 
-	GSASSERT( canary == (unsigned long) 0xdeadbeef, canary );
+	AssertCanary(__FUNCTION__);
 	buffer.appendFormatted("Int0: %d, Int1: %d, Int2: %d\n",int0Parameter, int1Parameter, int2Parameter);
 	buffer.appendFormatted("String0: %s, String1: %s\n", string0Parameter?string0Parameter:"<NULL>", string1Parameter?string1Parameter:"<NULL>");
 	for (i=0;i<3;i++) {

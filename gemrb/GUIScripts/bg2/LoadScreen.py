@@ -22,7 +22,7 @@
 ###################################################
 
 import GemRB
-import GUICommon
+import GameCheck
 from GUIDefines import *
 
 LoadScreen = None
@@ -38,14 +38,27 @@ def StartLoadScreen ():
 	LoadScreen = GemRB.LoadWindow (0)
 	LoadScreen.SetFrame ()
 	Middle = LoadScreen.GetControl (3)
-	LoadPic = GemRB.GetGameString (STR_LOADMOS)
-	if LoadPic == "":
-		#the addition of 1 is not an error, bg2 loadpic resrefs are GTRSK002-GTRSK006
-		LoadPic = "GTRSK00"+str(GemRB.Roll(1,5,1) )
-	Middle.SetMOS (LoadPic)
+
+	if not GameCheck.IsBG2Demo():
+		LoadPic = GemRB.GetGameString (STR_LOADMOS)
+		if LoadPic == "":
+			#the addition of 1 is not an error, bg2 loadpic resrefs are GTRSK002-GTRSK006
+			LoadPic = "GTRSK00"+str(GemRB.Roll(1,5,1) )
+		Middle.SetMOS (LoadPic)
+	else:
+		# During loading, this fn is called at 0% and 70%, so take advantage of that
+		#   and display the "quiet" frame first and the "flaming" frame the second time.
+		#   It would be even better to display the phases inbetween as well; however,
+		#   the bg2demo does not either, even though the frames are there.
+		Progress = GemRB.GetVar ("Progress")
+		if Progress:
+			Middle.SetBAM ("COADCNTR", 1, 0)
+		else:
+			Middle.SetBAM ("COADCNTR", 0, 0)
+
 	Progress = 0
 	GemRB.SetVar ("Progress", Progress)
-	if GUICommon.HasTOB():
+	if GameCheck.HasTOB():
 		Table = GemRB.LoadTable ("loadh25")
 	else:
 		Table = GemRB.LoadTable ("loadhint")
@@ -60,6 +73,10 @@ def StartLoadScreen ():
 	LoadScreen.SetVisible (WINDOW_VISIBLE)
 
 def EndLoadScreen ():
+	if GameCheck.IsBG2Demo():
+		Middle = LoadScreen.GetControl (3)
+		Middle.SetBAM ("COADCNTR", 1, 0)
+
 	LoadScreen.SetVisible (WINDOW_VISIBLE)
 	LoadScreen.Unload()
         return

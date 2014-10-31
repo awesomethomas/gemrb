@@ -41,6 +41,12 @@ int SDL12VideoDriver::Init(void)
 	if (ret==GEM_OK) {
 		SDL_EnableUNICODE( 1 );
 		SDL_EnableKeyRepeat( 500, 50 );
+#if TARGET_OS_MAC
+		// Apple laptops have single buttons,
+		// but actually produce more then left mouse events with that single button
+		// this may limit people actually using very old single button mice, but who cares :)
+		setenv("SDL_HAS3BUTTONMOUSE", "SDL_HAS3BUTTONMOUSE", 1);
+#endif
 	}
 	return ret;
 }
@@ -115,7 +121,10 @@ void SDL12VideoDriver::InitMovieScreen(int &w, int &h, bool yuv)
 
 void SDL12VideoDriver::DestroyMovieScreen()
 {
-	if (overlay) SDL_FreeYUVOverlay(overlay);
+	if (overlay) {
+		SDL_FreeYUVOverlay(overlay);
+		overlay = NULL;
+	}
 }
 
 void SDL12VideoDriver::showFrame(unsigned char* buf, unsigned int bufw,
@@ -303,6 +312,6 @@ bool SDL12VideoDriver::SetSurfaceAlpha(SDL_Surface* surface, unsigned short alph
 
 #include "plugindef.h"
 
-GEMRB_PLUGIN(0xDBAAB50, "SDL Video Driver")
+GEMRB_PLUGIN(0xDBAAB50, "SDL1 Video Driver")
 PLUGIN_DRIVER(SDL12VideoDriver, "sdl")
 END_PLUGIN()

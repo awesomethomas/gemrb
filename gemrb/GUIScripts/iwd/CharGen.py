@@ -26,6 +26,7 @@ import GemRB
 from GUIDefines import *
 from ie_stats import *
 from ie_spells import LS_MEMO
+import GameCheck
 import GUICommon
 import Spellbook
 import CommonTables
@@ -360,10 +361,8 @@ def AcceptPress():
 			GemRB.LearnSpell (MyChar, Learnable[i], 0)
 		GemRB.MemorizeSpell (MyChar, IE_SPELL_TYPE_PRIEST, 0, j, 1)
 
-	# ranger tracking is a hardcoded innate
-	if GUICommon.HasHOW():
-		if CommonTables.ClassSkills.GetValue (ClassName, "DRUIDSPELL") != "*":
-			GemRB.LearnSpell (MyChar, "spin139", LS_MEMO)
+	# apply class/kit abilities
+	GUICommon.ResolveClassAbilities (MyChar, ClassName)
 
 	# save all the skills
 	LUSkillsSelection.SkillsSave (MyChar)
@@ -674,6 +673,7 @@ def PortraitSelect():
 	Portrait = 0
 
 	PortraitPortraitButton = PortraitWindow.GetControl (1)
+	PortraitPortraitButton.SetState (IE_GUI_BUTTON_DISABLED)
 	PortraitPortraitButton.SetFlags (IE_GUI_BUTTON_PICTURE|IE_GUI_BUTTON_NO_IMAGE, OP_SET)
 
 	PortraitLeftButton = PortraitWindow.GetControl (2)
@@ -2558,10 +2558,15 @@ def BiographyPress():
 
 	CharGenWindow.SetVisible (WINDOW_INVISIBLE)
 	BiographyWindow = GemRB.LoadWindow (51)
-
 	BiographyField = BiographyWindow.GetControl (4)
-	BiographyField.SetText (19423)
-	BiographyField.SetBackground("")
+	BiographyField = BiographyField.ConvertEdit (3)
+	BiographyField.SetStatus (IE_GUI_CONTROL_FOCUSED)
+
+	BIO = GemRB.GetToken("Biography")
+	if BIO:
+ 		BiographyField.SetText (BIO)
+	else:
+		BiographyField.SetText (19423)
 
 	BiographyClearButton = BiographyWindow.GetControl (5)
 	BiographyClearButton.SetState (IE_GUI_BUTTON_ENABLED)
@@ -2578,7 +2583,6 @@ def BiographyPress():
 	BiographyDoneButton.SetState (IE_GUI_BUTTON_ENABLED)
 	BiographyDoneButton.SetEvent (IE_GUI_BUTTON_ON_PRESS, BiographyDonePress)
 	BiographyDoneButton.SetText (11973)
-	BiographyDoneButton.SetFlags (IE_GUI_BUTTON_DEFAULT, OP_OR)
 
 	BiographyWindow.SetVisible (WINDOW_VISIBLE)
 	return
@@ -2731,9 +2735,9 @@ def ImportDonePress():
 	SkillsButton.SetFlags (IE_GUI_BUTTON_DEFAULT, OP_NAND)
 	AppearanceButton.SetState (IE_GUI_BUTTON_ENABLED)
 	AppearanceButton.SetFlags (IE_GUI_BUTTON_DEFAULT, OP_OR)
-	BiographyButton.SetState (IE_GUI_BUTTON_ENABLED)
+	BiographyButton.SetState (IE_GUI_BUTTON_DISABLED)
 	BiographyButton.SetFlags (IE_GUI_BUTTON_DEFAULT, OP_OR)
-	NameButton.SetState (IE_GUI_BUTTON_ENABLED)
+	NameButton.SetState (IE_GUI_BUTTON_DISABLED)
 	NameButton.SetFlags (IE_GUI_BUTTON_DEFAULT, OP_OR)
 	CharGenWindow.SetVisible (WINDOW_VISIBLE)
 	if ImportWindow:

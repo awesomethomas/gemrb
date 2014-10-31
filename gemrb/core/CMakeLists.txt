@@ -118,6 +118,8 @@ FILE(GLOB gemrb_core_LIB_SRCS
 	GUI/TextEdit.cpp
 	GUI/Window.cpp
 	GUI/WorldMapControl.cpp
+	RNG/RNG_SFMT.cpp
+	RNG/sfmt/SFMT.c
 	Scriptable/Actor.cpp
 	Scriptable/CombatInfo.cpp
 	Scriptable/Container.cpp
@@ -151,6 +153,12 @@ else (STATIC_LINK)
 	  INSTALL(TARGETS gemrb_core LIBRARY DESTINATION ${LIB_DIR})
 	ENDIF(WIN32)
 endif (STATIC_LINK)
+
+# make lintian happy
+SET_TARGET_PROPERTIES(gemrb_core PROPERTIES
+	VERSION "${GEMRB_VERSION}"
+	SOVERSION "${GEMRB_VERSION}"
+)
 
 IF (APPLE)
 	SET_TARGET_PROPERTIES(gemrb_core PROPERTIES

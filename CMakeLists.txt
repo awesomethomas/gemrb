@@ -133,15 +133,21 @@ endif()
 
 IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	if ((NOT DISABLE_WERROR) AND GIT_VERSION)
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=cast-align")
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror -Wno-error=inline -Wno-error=cast-align -Wmissing-declarations -Winline")
 	endif ()
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -W -Wpointer-arith -Wcast-align")
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic -Wno-format-y2k -Wno-long-long -fno-strict-aliasing")
+	# mark chars explicitly signed (ARM defaults to unsigned)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsigned-char")
 	# only export symbols explicitly marked to be exported.
 	INCLUDE(CheckCXXCompilerFlag)
 	CHECK_CXX_COMPILER_FLAG("-fvisibility=hidden" VISIBILITY_HIDDEN)
 	IF (VISIBILITY_HIDDEN AND NOT WIN32)
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=hidden")
+	ENDIF ()
+	CHECK_CXX_COMPILER_FLAG("-fno-stack-protector" STACK_PROTECTOR)
+	IF (STACK_PROTECTOR)
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-stack-protector")
 	ENDIF ()
 	if (WIN32)
 		# GCC 4.5.0+ has shared libstdc++ without dllimport
@@ -152,16 +158,14 @@ IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	if (NOT APPLE AND NOT UNSAFE_PLUGIN)
 		set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,--no-undefined")
 	endif (NOT APPLE AND NOT UNSAFE_PLUGIN)
+	# GNU systems need to define the Mersenne exponent for the RNG to compile w/o warning
+	ADD_DEFINITIONS("-DSFMT_MEXP=19937")
 ENDIF()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules/")
 
 # Check for all the required and optional dependencies
-IF((CMAKE_MAJOR_VERSION GREATER 1) AND (CMAKE_MINOR_VERSION GREATER 7))
-	FIND_PACKAGE(PythonLibs 2.3 REQUIRED)
-ELSE((CMAKE_MAJOR_VERSION GREATER 1) AND (CMAKE_MINOR_VERSION GREATER 7))
-	INCLUDE(FindPythonLibs)
-ENDIF((CMAKE_MAJOR_VERSION GREATER 1) AND (CMAKE_MINOR_VERSION GREATER 7))
+FIND_PACKAGE(PythonLibs 2.3 REQUIRED)
 IF(PYTHONLIBS_FOUND)
 	MESSAGE(STATUS "Looking for Python libraries and headers: found")
 ELSE()
@@ -171,10 +175,50 @@ ENDIF()
 
 INCLUDE(FindSDL)
 IF(SDL_FOUND)
-	MESSAGE(STATUS "Looking for SDL: found")
+	MESSAGE(STATUS "Looking for SDL1: found")
 ELSE()
-	MESSAGE(SEND_ERROR "Looking for SDL: not found!")
-	MESSAGE(FATAL_ERROR "Please get it from www.libsdl.org")
+	MESSAGE(WARNING "Looking for SDL1: not found!")
+ENDIF()
+
+# look for sdl2 if sdl1 was not found or a preference was stated
+IF(USE_SDL2 OR NOT SDL_FOUND)
+	INCLUDE(FindSDL2)
+ENDIF()
+IF(SDL2_FOUND)
+	MESSAGE(STATUS "Looking for SDL2: found")
+	# unify SDL variables, so we don't have to differentiate later
+	SET(SDL_INCLUDE_DIR ${SDL2_INCLUDE_DIR})
+	SET(SDL_LIBRARY ${SDL2_LIBRARY})
+	# skip SDL_FOUND for later use
+ELSE()
+	MESSAGE(WARNING "Looking for SDL2: not found!")
+	IF(NOT SDL_FOUND)
+		MESSAGE(FATAL_ERROR "Please get SDL from www.libsdl.org")
+	ENDIF()
+ENDIF()
+
+IF(USE_OPENGL)
+	IF(NOT SDL2_FOUND)
+		MESSAGE(FATAL_ERROR "SDL2 is required for the OpenGL driver!")
+	ENDIF()
+	INCLUDE(FindOpenGL)
+	IF(NOT OPENGL_FOUND)
+		MESSAGE(FATAL_ERROR "OpenGL library not found!")
+	ENDIF()
+
+	IF(USE_OPENGL EQUAL 1)
+		ADD_DEFINITIONS("-DUSE_GL")
+		INCLUDE(FindGLEW)
+		IF(GLEW_FOUND)
+			MESSAGE(STATUS "Looking for Glew: found")
+		ELSE()
+			MESSAGE(SEND_ERROR "Looking for Glew: not found!")
+			MESSAGE(FATAL_ERROR "Please install the Glew library and headers first!")
+		ENDIF()
+	ELSE()
+		# use GLES instead of regular GL
+		# TODO: check for all the stuff GLES needs
+	ENDIF()
 ENDIF()
 
 INCLUDE(FindZLIB)
@@ -199,12 +243,22 @@ ELSE()
 	MESSAGE(WARNING "If it just wasn't found, try setting the OPENALDIR environment variable.")
 ENDIF()
 
-INCLUDE(FindSDL_mixer)
-IF(SDLMIXER_FOUND)
+IF(SDL2_FOUND)
+	INCLUDE(FindSDL2_mixer)
+	# unify variables, so we don't have to differentiate later
+	SET(SDL_MIXER_INCLUDE_DIRS ${SDL2_MIXER_INCLUDE_DIRS})
+	SET(SDL_MIXER_LIBRARIES ${SDL2_MIXER_LIBRARIES})
+	SET(SDL_MIXER_VERSION_STRING ${SDL2_MIXER_VERSION_STRING})
+	SET(SDL_MIXER_FOUND ${SDL2_MIXER_FOUND})
+ELSE()
+	INCLUDE(FindSDL_mixer)
+ENDIF()
+IF(SDL_MIXER_FOUND)
 	MESSAGE(STATUS "Looking for SDL_mixer: found")
 ELSE()
 	MESSAGE(WARNING "Looking for SDL_mixer: not found!")
 	MESSAGE(WARNING "If you want to build the SDL_mixer plugin, install SDL_mixer first.")
+	MESSAGE(WARNING "Make sure you use a version compatible with the chosen SDL version.")
 ENDIF()
 
 INCLUDE(FindLIBVLC)
@@ -252,8 +306,6 @@ IF(NOT VORBIS_LIBRARY)
 	MESSAGE(WARNING "While no original game data is in OGG format, some mod data is and will need conversion.")
 ENDIF()
 
-ADD_DEFINITIONS("-DHAVE_CONFIG_H")
-
 # On Release builds cmake automatically defines NDEBUG, so we
 # explicitly undefine it:
 # This matches stripped (Release) and nonstripped (RelWithDebInfo) builds
@@ -272,33 +324,8 @@ endif (STATIC_LINK)
 
 INCLUDE_DIRECTORIES(${CMAKE_CURRENT_BINARY_DIR} gemrb/includes gemrb/core)
 
-#Platform checks
-INCLUDE (CheckTypeSize)
-CHECK_TYPE_SIZE("int" SIZEOF_INT)
-CHECK_TYPE_SIZE("long int" SIZEOF_LONG_INT)
-
-INCLUDE (CheckFunctionExists)
-CHECK_FUNCTION_EXISTS("strndup" HAVE_STRNDUP)
-CHECK_FUNCTION_EXISTS("strlcpy", HAVE_STRLCPY)
-CHECK_FUNCTION_EXISTS("setenv" HAVE_SETENV)
-
-CHECK_INCLUDE_FILES("unistd.h" HAVE_UNISTD_H)
-CHECK_INCLUDE_FILES("malloc.h" HAVE_MALLOC_H)
-
-#Unneeded on windows
-IF(NOT WIN32)
-	INCLUDE (CheckCXXSourceCompiles)
-	CHECK_CXX_SOURCE_COMPILES("typedef void *(* voidvoid)(void);
-
-		void *object = 0;
-		voidvoid function;
-		function = (voidvoid) object;
-		" PERMITS_OBJECT_TO_FUNCTION_CAST)
-
-	IF( NOT PERMITS_OBJECT_TO_FUNCTION_CAST )
-		SET(HAVE_FORBIDDEN_OBJECT_TO_FUNCTION_CAST 1)
-	ENDIF( NOT PERMITS_OBJECT_TO_FUNCTION_CAST )
-ENDIF(NOT WIN32)
+# generate config.h
+INCLUDE (config)
 
 IF(APPLE)
 	# Make sure we can find the 'ibtool' program. we need it to compile xibs
@@ -317,16 +344,6 @@ IF(APPLE)
 	# for pure objective-c
 	SET (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -x objective-c -DTARGET_OS_MAC")
 ENDIF(APPLE)
-
-IF (MINGW)
-	SET (WIN32_USE_STDIO Yes)
-ENDIF ()
-if (WIN32_USE_STDIO)
-	SET (NOCOLOR Yes)
-ENDIF()
-
-CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_config.h.in
-	${CMAKE_CURRENT_BINARY_DIR}/config.h ESCAPE_QUOTES)
 
 #Plugin addition macro
 MACRO(ADD_GEMRB_PLUGIN plugin_name)
@@ -354,6 +371,8 @@ MACRO(ADD_GEMRB_PLUGIN plugin_name)
 		endif (NOT UNSAFE_PLUGIN)
 		if (CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
 			TARGET_LINK_LIBRARIES(${plugin_name} -shared-libgcc)
+		elseif (CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+			TARGET_LINK_LIBRARIES(${plugin_name} -lc)
 		endif (CMAKE_SYSTEM_NAME STREQUAL "NetBSD")
 		INSTALL(TARGETS ${plugin_name} DESTINATION ${PLUGIN_DIR})
 	endif (STATIC_LINK)
@@ -388,7 +407,7 @@ INSTALL( FILES admin/extend2da.py DESTINATION ${BIN_DIR}
 
 CONFIGURE_FILE(
 	"${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
-	"${CMAKE_CURRENT_BINARY_DIR}/cmake/cmake_uninstall.cmake"
+	"${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
 	IMMEDIATE @ONLY
 )
 
@@ -442,6 +461,8 @@ PRINT_OPTION(STATIC_LINK)
 PRINT_OPTION(INSOURCEBUILD)
 PRINT_OPTION(DISABLE_WERROR)
 PRINT_OPTION(WIN32_USE_STDIO)
+PRINT_OPTION(USE_SDL2)
+PRINT_OPTION(USE_OPENGL)
 message(STATUS "")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "")

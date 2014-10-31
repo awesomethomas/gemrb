@@ -41,11 +41,16 @@ using namespace GemRB;
 #if SDL_VERSION_ATLEAST(1,3,0)
 #define SDL_SRCCOLORKEY SDL_TRUE
 #define SDL_SRCALPHA 0
+#define SDLKey SDL_Keycode
 #define SDLK_SCROLLOCK SDLK_SCROLLLOCK
+#define SDLK_KP1 SDLK_KP_1
 #define SDLK_KP2 SDLK_KP_2
+#define SDLK_KP3 SDLK_KP_3
 #define SDLK_KP4 SDLK_KP_4
 #define SDLK_KP6 SDLK_KP_6
+#define SDLK_KP7 SDLK_KP_7
 #define SDLK_KP8 SDLK_KP_8
+#define SDLK_KP9 SDLK_KP_9
 #else
 typedef Sint32 SDL_Keycode;
 #endif
@@ -84,8 +89,9 @@ int SDLVideoDriver::Init(void)
 		//print("[ERROR]");
 		return GEM_ERROR;
 	}
-	//print("[OK]\n");
-	SDL_ShowCursor( SDL_DISABLE );
+	if (!(MouseFlags&MOUSE_HIDDEN)) {
+		SDL_ShowCursor( SDL_DISABLE );
+	}
 	return GEM_OK;
 }
 
@@ -94,15 +100,12 @@ int SDLVideoDriver::SwapBuffers(void)
 	unsigned long time;
 	time = GetTickCount();
 	if (( time - lastTime ) < 33) {
+#ifndef NOFPSLIMIT
 		SDL_Delay( 33 - (time - lastTime) );
+#endif
 		time = GetTickCount();
 	}
 	lastTime = time;
-
-	bool ConsolePopped = core->ConsolePopped;
-	if (ConsolePopped) {
-		core->DrawConsole();
-	}
 
 	if (Cursor[CursorIndex] && !(MouseFlags & (MOUSE_DISABLED | MOUSE_HIDDEN))) {
 		
@@ -168,6 +171,7 @@ int SDLVideoDriver::ProcessEvent(const SDL_Event & event)
 
 	SDL_Keycode key = SDLK_UNKNOWN;
 	int modstate = GetModState(event.key.keysym.mod);
+	SDLKey sym = event.key.keysym.sym;
 
 	/* Loop until there are no events left on the queue */
 	switch (event.type) {
@@ -178,7 +182,7 @@ int SDLVideoDriver::ProcessEvent(const SDL_Event & event)
 			return GEM_OK;
 			break;
 		case SDL_KEYUP:
-			switch(event.key.keysym.sym) {
+			switch(sym) {
 				case SDLK_LALT:
 				case SDLK_RALT:
 					key = GEM_ALT;
@@ -196,8 +200,8 @@ int SDLVideoDriver::ProcessEvent(const SDL_Event & event)
 					}
 					// fallthrough
 				default:
-					if (event.key.keysym.sym<256) {
-						key = event.key.keysym.sym;
+					if (sym < 256) {
+						key = sym;
 					}
 					break;
 			}
@@ -205,7 +209,7 @@ int SDLVideoDriver::ProcessEvent(const SDL_Event & event)
 				EvntManager->KeyRelease( key, modstate );
 			break;
 		case SDL_KEYDOWN:
-			if ((event.key.keysym.sym == SDLK_SPACE) && modstate & GEM_MOD_CTRL) {
+			if ((sym == SDLK_SPACE) && modstate & GEM_MOD_CTRL) {
 				core->PopupConsole();
 				break;
 			}
@@ -214,92 +218,110 @@ int SDLVideoDriver::ProcessEvent(const SDL_Event & event)
 #else
 			key = event.key.keysym.unicode;
 #endif
-			if (key < 32 || key == 127) {
-				switch (event.key.keysym.sym) {
-					case SDLK_ESCAPE:
-						key = GEM_ESCAPE;
-						break;
-					case SDLK_END:
-						key = GEM_END;
-						break;
-					case SDLK_HOME:
-						key = GEM_HOME;
-						break;
-					case SDLK_UP:
-					case SDLK_KP8:
-						key = GEM_UP;
-						break;
-					case SDLK_DOWN:
-					case SDLK_KP2:
-						key = GEM_DOWN;
-						break;
-					case SDLK_LEFT:
-					case SDLK_KP4:
-						key = GEM_LEFT;
-						break;
-					case SDLK_RIGHT:
-					case SDLK_KP6:
-						key = GEM_RIGHT;
-						break;
-					case SDLK_DELETE:
-#if TARGET_OS_IPHONE < 1
-						//iOS currently doesnt have a backspace so we use delete.
-						//This change should be future proof in the event apple changes the delete key to a backspace.
-						key = GEM_DELETE;
-						break;
-#endif
-					case SDLK_BACKSPACE:
-						key = GEM_BACKSP;
-						break;
-					case SDLK_RETURN:
-					case SDLK_KP_ENTER:
-						key = GEM_RETURN;
-						break;
-					case SDLK_LALT:
-					case SDLK_RALT:
-						key = GEM_ALT;
-						break;
-					case SDLK_TAB:
-						key = GEM_TAB;
-						break;
-					case SDLK_PAGEUP:
-						key = GEM_PGUP;
-						break;
-					case SDLK_PAGEDOWN:
-						key = GEM_PGDOWN;
-						break;
-					case SDLK_SCROLLOCK:
-						key = GEM_GRAB;
-						break;
-					case SDLK_F1:
-					case SDLK_F2:
-					case SDLK_F3:
-					case SDLK_F4:
-					case SDLK_F5:
-					case SDLK_F6:
-					case SDLK_F7:
-					case SDLK_F8:
-					case SDLK_F9:
-					case SDLK_F10:
-					case SDLK_F11:
-					case SDLK_F12:
-						//assuming they come sequentially,
-						//also, there is no need to ever produce more than 12
-						key = GEM_FUNCTION1+event.key.keysym.sym-SDLK_F1;
-						break;
-					default:
-						break;
+			// reenable special numpad keys unless numlock is off
+			if (SDL_GetModState() & KMOD_NUM) {
+				switch (sym) {
+					case SDLK_KP1: sym = SDLK_1; break;
+					case SDLK_KP2: sym = SDLK_2; break;
+					case SDLK_KP3: sym = SDLK_3; break;
+					case SDLK_KP4: sym = SDLK_4; break;
+					// 5 is not special
+					case SDLK_KP6: sym = SDLK_6; break;
+					case SDLK_KP7: sym = SDLK_7; break;
+					case SDLK_KP8: sym = SDLK_8; break;
+					case SDLK_KP9: sym = SDLK_9; break;
+					default: break;
 				}
-				if (core->ConsolePopped)
-					core->console->OnSpecialKeyPress( key );
-				else
-					EvntManager->OnSpecialKeyPress( key );
-			} else if (( key != 0 )) {
-				if (core->ConsolePopped)
-					core->console->OnKeyPress( key, modstate);
-				else
-					EvntManager->KeyPress( key, modstate);
 			}
+			switch (sym) {
+				case SDLK_ESCAPE:
+					key = GEM_ESCAPE;
+					break;
+				case SDLK_END:
+				case SDLK_KP1:
+					key = GEM_END;
+					break;
+				case SDLK_HOME:
+				case SDLK_KP7:
+					key = GEM_HOME;
+					break;
+				case SDLK_UP:
+				case SDLK_KP8:
+					key = GEM_UP;
+					break;
+				case SDLK_DOWN:
+				case SDLK_KP2:
+					key = GEM_DOWN;
+					break;
+				case SDLK_LEFT:
+				case SDLK_KP4:
+					key = GEM_LEFT;
+					break;
+				case SDLK_RIGHT:
+				case SDLK_KP6:
+					key = GEM_RIGHT;
+					break;
+				case SDLK_DELETE:
+#if TARGET_OS_IPHONE < 1
+					//iOS currently doesnt have a backspace so we use delete.
+					//This change should be future proof in the event apple changes the delete key to a backspace.
+					key = GEM_DELETE;
+					break;
+#endif
+				case SDLK_BACKSPACE:
+					key = GEM_BACKSP;
+					break;
+				case SDLK_RETURN:
+				case SDLK_KP_ENTER:
+					key = GEM_RETURN;
+					break;
+				case SDLK_LALT:
+				case SDLK_RALT:
+					key = GEM_ALT;
+					break;
+				case SDLK_TAB:
+					key = GEM_TAB;
+					break;
+				case SDLK_PAGEUP:
+				case SDLK_KP9:
+					key = GEM_PGUP;
+					break;
+				case SDLK_PAGEDOWN:
+				case SDLK_KP3:
+					key = GEM_PGDOWN;
+					break;
+				case SDLK_SCROLLOCK:
+					key = GEM_GRAB;
+					break;
+				case SDLK_F1:
+				case SDLK_F2:
+				case SDLK_F3:
+				case SDLK_F4:
+				case SDLK_F5:
+				case SDLK_F6:
+				case SDLK_F7:
+				case SDLK_F8:
+				case SDLK_F9:
+				case SDLK_F10:
+				case SDLK_F11:
+				case SDLK_F12:
+					//assuming they come sequentially,
+					//also, there is no need to ever produce more than 12
+					key = GEM_FUNCTION1 + sym-SDLK_F1;
+					break;
+				default:
+					if (( key != 0 )) {
+						if (core->ConsolePopped)
+							core->console->OnKeyPress( key, modstate);
+						else
+							EvntManager->KeyPress( key, modstate);
+					}
+					return GEM_OK;
+			}
+			if (core->ConsolePopped)
+				core->console->OnSpecialKeyPress( key );
+			else
+				EvntManager->OnSpecialKeyPress( key );
 			break;
 		case SDL_MOUSEMOTION:
 			MouseMovement(event.motion.x, event.motion.y);
@@ -1318,7 +1340,7 @@ void SDLVideoDriver::DrawPolyline(Gem_Polygon* poly, const Color& color, bool fi
 			Point& c = poly->points[redge];
 			Point& d = poly->points[(redge+1)%(poly->count)];
 
-                       Pixel* line = (Pixel*)(backBuf->pixels) + (y_top+yCorr)*backBuf->pitch;
+			Pixel* line = (Pixel*)(backBuf->pixels) + (y_top+yCorr)*backBuf->pitch;
 
 			for (int y = y_top; y < y_bot; ++y) {
 				int py = y + Viewport.y;
@@ -1405,8 +1427,12 @@ void SDLVideoDriver::SetClipRect(const Region* clip)
 
 void SDLVideoDriver::GetClipRect(Region& clip)
 {
-	SDL_Rect tmp = RectFromRegion(clip);
+	SDL_Rect tmp;
 	SDL_GetClipRect( backBuf, &tmp );
+	clip.x = tmp.x;
+	clip.y = tmp.y;
+	clip.w = tmp.w;
+	clip.h = tmp.h;
 }
 
 void SDLVideoDriver::MouseMovement(int x, int y)

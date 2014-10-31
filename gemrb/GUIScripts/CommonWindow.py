@@ -17,6 +17,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 import GemRB
+import GameCheck
 from GUIDefines import GS_DIALOGMASK, OP_SET
 
 # message window expansion
@@ -52,14 +53,14 @@ from GUIDefines import *
 
 ContainerWindow = None
 Container = None
-if GUICommon.GameIsIWD2():
+if GameCheck.IsIWD2():
 	leftdiv = 5
 	ground_size = 10
 else:
 	leftdiv = 3
 	ground_size = 6
 
-if GUICommon.GameIsPST():
+if GameCheck.IsPST():
 	import GUICommonWindows
 
 def UpdateContainerWindow ():
@@ -68,7 +69,7 @@ def UpdateContainerWindow ():
 	Window = ContainerWindow
 
 	pc = GemRB.GameGetFirstSelectedPC ()
-	if GUICommon.GameIsPST():
+	if GameCheck.IsPST():
 		GUICommon.SetEncumbranceLabels (Window, 54, None, pc, True)
 	else:
 		GUICommon.SetEncumbranceLabels (Window, 0x10000043, 0x10000044, pc)
@@ -94,7 +95,8 @@ def UpdateContainerWindow ():
 def RedrawContainerWindow ():
 	Window = ContainerWindow
 
-	LeftTopIndex = GemRB.GetVar ("LeftTopIndex") * 3
+	# scroll in multiples of the number of columns
+	LeftTopIndex = GemRB.GetVar ("LeftTopIndex") * leftdiv
 	LeftIndex = GemRB.GetVar ("LeftIndex")
 	RightTopIndex = GemRB.GetVar ("RightTopIndex") * 2
 	RightIndex = GemRB.GetVar ("RightIndex")
@@ -113,7 +115,7 @@ def RedrawContainerWindow ():
 		else:
 			Button.SetVarAssoc ("LeftIndex", -1)
 			function = None
-		if GUICommon.GameIsPST():
+		if GameCheck.IsPST():
 			GUICommonWindows.SetItemButton (Window, Button, Slot, function, None)
 		else:
 			GUICommon.UpdateInventorySlot (pc, Button, Slot, "container")
@@ -134,7 +136,7 @@ def RedrawContainerWindow ():
 		else:
 			Button.SetVarAssoc ("RightIndex", -1)
 			function = None
-		if GUICommon.GameIsPST():
+		if GameCheck.IsPST():
 			GUICommonWindows.SetItemButton (Window, Button, Slot, function, None)
 		else:
 			GUICommon.UpdateInventorySlot (pc, Button, Slot, "inventory")
@@ -161,11 +163,11 @@ def OpenContainerWindow ():
 
 
 	#stop gears from interfering
-	if GUICommon.GameIsPST():
+	if GameCheck.IsPST():
 		GUIWORLD.OldPortraitWindow = GUIClasses.GWindow( GemRB.GetVar ("PortraitWindow") )
 		GUICommonWindows.DisableAnimatedWindows ()
 
-	if GUICommon.GameIsIWD2():
+	if GameCheck.IsIWD2():
 		GUIWORLD.OldMessageWindow = GUIClasses.GWindow( GemRB.GetVar ("MessageWindow") )
 		GemRB.SetVar ("MessageWindow", Window.ID)
 	else:
@@ -177,7 +179,7 @@ def OpenContainerWindow ():
 	Container = GemRB.GetContainer(0)
 
 	# Gears (time) when options pane is down
-	if GUICommon.GameIsBG2():
+	if GameCheck.IsBG2():
 		Button = Window.GetControl (62)
 		Label = Button.CreateLabelOnButton (0x1000003e, "NORMAL", 0)
 
@@ -195,7 +197,8 @@ def OpenContainerWindow ():
 		Button = Window.GetControl (i)
 		Button.SetVarAssoc ("LeftIndex", i)
 		Button.SetEvent (IE_GUI_BUTTON_ON_PRESS, TakeItemContainer)
-		if GUICommon.GameIsPST():
+		if GameCheck.IsPST():
+			Button.SetFont ("NUMBER")
 			Button.SetFlags (IE_GUI_BUTTON_ALIGN_RIGHT | IE_GUI_BUTTON_ALIGN_BOTTOM, OP_OR)
 
 	# 10-13 - Personal Item
@@ -203,7 +206,8 @@ def OpenContainerWindow ():
 		Button = Window.GetControl (i+10)
 		Button.SetVarAssoc ("RightIndex", i)
 		Button.SetEvent (IE_GUI_BUTTON_ON_PRESS, DropItemContainer)
-		if GUICommon.GameIsPST():
+		if GameCheck.IsPST():
+			Button.SetFont ("NUMBER")
 			Button.SetFlags (IE_GUI_BUTTON_ALIGN_RIGHT | IE_GUI_BUTTON_ALIGN_BOTTOM, OP_OR)
 
 	# left scrollbar (container)
@@ -218,7 +222,7 @@ def OpenContainerWindow ():
 	# iwd has a handy button
 	if Window.HasControl (54):
 		Button = Window.GetControl (54)
-		if GUICommon.GameIsPST():
+		if GameCheck.IsPST():
 			Button.SetFont ("NUMBER")
 			Button.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_SET)
 		Button.CreateLabelOnButton (0x10000043, "NUMBER", IE_FONT_ALIGN_LEFT|IE_FONT_ALIGN_TOP)
@@ -229,11 +233,11 @@ def OpenContainerWindow ():
 
 	# container icon
 	Button = Window.GetControl (50)
-	if GUICommon.GameIsPST():
+	if GameCheck.IsPST():
 		Button.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_SET)
 	Button.SetState (IE_GUI_BUTTON_LOCKED)
 
-	if not GUICommon.GameIsPST():
+	if not GameCheck.IsPST():
 		Table = GemRB.LoadTable ("containr")
 		row = Container['Type']
 		tmp = Table.GetValue (row, 0)
@@ -245,9 +249,9 @@ def OpenContainerWindow ():
 
 	# Done
 	Button = Window.GetControl (51)
-	if GUICommon.GameIsPST():
+	if GameCheck.IsPST():
 		Button.SetText (1403)
-	elif GUICommon.GameIsIWD2():
+	elif GameCheck.IsIWD2():
 		Button.SetText ("")
 	else:
 		Button.SetText (11973)
@@ -270,7 +274,7 @@ def CloseContainerWindow ():
 
 	ContainerWindow.Unload ()
 
-	if GUICommon.GameIsPST():
+	if GameCheck.IsPST():
 		GemRB.SetVar ("PortraitWindow", GUIWORLD.OldPortraitWindow.ID)
 		GUICommonWindows.EnableAnimatedWindows ()
 		 #PST needs a reminder to redraw the  clock for some reason
@@ -279,7 +283,7 @@ def CloseContainerWindow ():
 		
 
 	# FIXME: iwd2 bug or just bad naming?
-	if GUICommon.GameIsIWD2():
+	if GameCheck.IsIWD2():
 		GemRB.SetVar ("MessageWindow", GUIWORLD.OldMessageWindow.ID)
 	else:
 		GemRB.SetVar ("ActionsWindow", GUIWORLD.OldActionsWindow.ID)

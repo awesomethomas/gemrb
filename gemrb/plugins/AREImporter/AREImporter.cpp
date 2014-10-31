@@ -567,6 +567,11 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 		memcpy( ip->KeyResRef, KeyResRef, sizeof(KeyResRef) );
 
 		//these appear only in PST, but we could support them everywhere
+		// HOWEVER they did not use them as witnessed in ar0101 (0101prt1 and 0101prt2) :(
+		if (core->HasFeature(GF_PST_STATE_FLAGS)) {
+			TalkX = ip->Pos.x;
+			TalkY = ip->Pos.y;
+		}
 		ip->TalkPos.x=TalkX;
 		ip->TalkPos.y=TalkY;
 		ip->DialogName=DialogName;
@@ -1027,13 +1032,14 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 			ab->HomeLocation.x = XDes;
 			ab->HomeLocation.y = YDes;
 			ab->Spawned = Spawned;
+			ab->appearance = Schedule;
 			//copying the scripting name into the actor
 			//if the CreatureAreaFlag was set to 8
 			if ((Flags&AF_NAME_OVERRIDE) || (core->HasFeature(GF_IWD2_SCRIPTNAME)) ) {
 				ab->SetScriptName(DefaultName);
 			}
 			//IWD2 specific hacks
-			if (core->HasFeature(GF_IWD2_SCRIPTNAME)) {
+			if (core->HasFeature(GF_3ED_RULES)) {
 				//This flag is used for something else in IWD2
 				if (Flags&AF_NAME_OVERRIDE) {
 					ab->BaseStats[IE_EA]=EA_EVILCUTOFF;
@@ -1049,12 +1055,9 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 					// 1 - area difficulty 1
 					// 2 - area difficulty 2
 					// 4 - area difficulty 3
-					if (!DifficultyMargin || (DifficultyMargin & map->AreaDifficulty)) {
-						//TODO: save AF_ENABLED instead, so if someone implements Imprisonment for iwd2, this won't interfere
-						ab->SetBase(IE_AVATARREMOVAL, 0);
-					} else {
+					if (DifficultyMargin && !(DifficultyMargin & map->AreaDifficulty)) {
 						// iwd2 has GF_START_ACTIVE off, but that only touches IF_IDLE
-						ab->SetBase(IE_AVATARREMOVAL, 1);
+						ab->appearance = 0;
 					}
 				}
 			}
@@ -1069,7 +1072,6 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 				}
 			}
 			ab->SetOrientation( Orientation,0 );
-			ab->appearance = Schedule;
 			ab->TalkCount = TalkCount;
 			// TODO: remove corpse at removal time?
 			ab->RemovalTime = RemovalTime;
@@ -2159,7 +2161,7 @@ int AREImporter::PutMapnotes( DataStream *stream, Map *map)
 			tmpWord = (ieWord) mn->Pos.y;
 			stream->WriteWord( &tmpWord );
 			//update custom strref
-			core->UpdateString( mn->strref, mn->text);
+			mn->strref = core->UpdateString( mn->strref, mn->text );
 			tmpDword = mn->strref;
 			stream->WriteDword( &tmpDword);
 			stream->WriteWord( &tmpWord );

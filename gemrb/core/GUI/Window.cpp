@@ -21,15 +21,11 @@
 #include "GUI/Window.h"
 
 #include "GUI/Button.h"
-#include "GUI/Control.h"
 #include "GUI/MapControl.h"
-#include "GUI/Progressbar.h"
 #include "GUI/ScrollBar.h"
-#include "GUI/Slider.h"
 
 #include "win32def.h"
 
-#include "Interface.h"
 #include "Video.h"
 
 #include "ie_cursors.h"
@@ -100,6 +96,7 @@ void Window::SetBackGround(Sprite2D* img, bool clean)
 /** This function Draws the Window on the Output Screen */
 void Window::DrawWindow()
 {
+	if (!Visible) return; // no point in drawing invisible windows
 	Video* video = core->GetVideoDriver();
 	Region clip( XPos, YPos, Width, Height );
 	//Frame && Changed
@@ -107,8 +104,7 @@ void Window::DrawWindow()
 		Region screen( 0, 0, core->Width, core->Height );
 		video->SetClipRect( NULL );
 		//removed this?
-		Color black = { 0, 0, 0, 255 };
-		video->DrawRect( screen, black );
+		video->DrawRect( screen, ColorBlack );
 		if (core->WindowFrames[0])
 			video->BlitSprite( core->WindowFrames[0], 0, 0, true );
 		if (core->WindowFrames[1])
@@ -225,12 +221,10 @@ void Window::SetFocused(Control* ctrl)
 {
 	if (lastFocus != NULL) {
 		lastFocus->SetFocus(false);
-		lastFocus->Changed = true;
 	}
 	lastFocus = ctrl;
 	if (ctrl != NULL) {
 		lastFocus->SetFocus(true);
-		lastFocus->Changed = true;
 	}
 }
 
@@ -238,11 +232,11 @@ void Window::SetFocused(Control* ctrl)
 void Window::SetMouseFocused(Control* ctrl)
 {
 	if (lastMouseFocus != NULL) {
-		lastMouseFocus->Changed = true;
+		lastMouseFocus->MarkDirty();
 	}
 	lastMouseFocus = ctrl;
 	if (ctrl != NULL) {
-		lastMouseFocus->Changed = true;
+		lastMouseFocus->MarkDirty();
 	}
 }
 
@@ -330,7 +324,7 @@ void Window::Invalidate()
 		if (!Controls[i]) {
 			continue;
 		}
-		Controls[i]->Changed = true;
+		Controls[i]->MarkDirty();
 		switch (Controls[i]->ControlType) {
 			case IE_GUI_SCROLLBAR:
 				if ((ScrollControl == -1) || (Controls[i]->Flags & IE_GUI_SCROLLBAR_DEFAULT))
@@ -360,7 +354,22 @@ void Window::InvalidateForControl(Control *ctrl) {
 	// TODO: for this to be general-purpose, we should mark anything inside this
 	// region with Changed, and also do mass Invalidate() if we overlap with
 	// another window, but for now this just clips the *background*, see DrawWindow()
-	clip_regions.push_back( Region(ctrl->XPos, ctrl->YPos, ctrl->Width, ctrl->Height) );
+	Region ctrlFrame = ctrl->ControlFrame();
+	std::vector<Region>::iterator it;
+	for (it = clip_regions.begin(); it != clip_regions.end(); ++it) {
+		Region& r = *it;
+		if (r.InsideRegion(ctrlFrame)) {
+			*it = ctrlFrame;
+			break;
+		} else if (ctrlFrame.InsideRegion(r)) {
+			// already have a rect larger
+			break;
+		}
+	}
+	if (it == clip_regions.end()) {
+		// made it to the end of the list, so we didnt find a match.
+		clip_regions.push_back(ctrlFrame);
+	}
 }
 
 void Window::RedrawControls(const char* VarName, unsigned int Sum)
@@ -422,7 +431,15 @@ void Window::OnMouseOver(unsigned short x, unsigned short y)
 	if (!lastOver) {
 		return;
 	}
-	lastOver->OnMouseOver( x - XPos - lastOver->XPos, y - YPos - lastOver->YPos );
+	short cx = x - XPos - lastOver->XPos;
+	short cy = y - YPos - lastOver->YPos;
+	if (cx < 0) {
+		cx = 0;
+	}
+	if (cy < 0) {
+		cy = 0;
+	}
+	lastOver->OnMouseOver(cx, cy);
 }
 
 }

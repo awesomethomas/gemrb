@@ -33,7 +33,6 @@
 #include "EffectQueue.h"
 #include "Palette.h"
 
-#include <cstring>
 #include <vector>
 
 namespace GemRB {
@@ -171,6 +170,7 @@ namespace GemRB {
 #define UI_MISS      2       //ranged miss (projectile has no effects)
 #define UI_CRITICAL  4       //a critical hit happened
 #define UI_FAKE      8       //deplete the item but don't actually apply its effects
+#define UI_NOAURA    16      //ignore spellcasting aura checks
 
 //used to mask off current profs
 #define PROFS_MASK  0x07
@@ -349,7 +349,6 @@ public:
 	ieDword nextComment;         //do something random (area comment, interaction)
 	ieDword nextBored;           //do something when bored
 	ieDword lastInit;
-	bool no_more_steps;
 	int speed;
 	//how many attacks left in this round, must be public for cleave opcode
 	int attackcount;
@@ -410,6 +409,8 @@ private:
 	bool HasBodyHeat() const;
 	void SetupFistData();
 	void UpdateFatigue();
+	int GetSneakAttackDamage(Actor *target, WeaponInfo &wi, int &multiplier, bool weaponImmunity);
+	int GetBackstabDamage(Actor *target, WeaponInfo &wi, int multiplier, int damage) const;
 public:
 	Actor(void);
 	~Actor(void);
@@ -442,7 +443,7 @@ public:
 	/** gets saving throws */
 	void RollSaves();
 	/** returns a saving throw */
-	bool GetSavingThrow(ieDword type, int modifier);
+	bool GetSavingThrow(ieDword type, int modifier, int spellLevel=0, int saveBonus=0);
 	/** Returns true if the actor is targetable */
 	bool ValidTarget(int ga_flags, Scriptable *checker = NULL) const;
 	/** Clamps a stat value to the valid range for the respective stat */
@@ -524,7 +525,7 @@ public:
 	/* call this on gui selects */
 	void PlaySelectionSound();
 	/* call this when adding actions via gui */
-	void CommandActor();
+	void CommandActor(Action* action);
 	/** handle panic and other involuntary actions that mess with scripting */
 	bool OverrideActions();
 	/** handle idle actions, that shouldn't mess with scripting */
@@ -551,8 +552,8 @@ public:
 	void DialogInterrupt();
 	/* called when actor was hit */
 	void GetHit(int damage=0, int spellLevel=0);
-	/* checks whether concentration cancels damage taken disrupting casting */
-	bool CheckCastingInterrupt(int damage, int spellLevel);
+	/* checks whether taking damage should disrupt spellcasting */
+	bool CheckSpellDisruption(int damage, int spellLevel);
 	/* called when actor starts to cast a spell*/
 	bool HandleCastingStance(const ieResRef SpellResRef, bool deplete, bool instant);
 	/* check if the actor should be just knocked out by a lethal hit */
@@ -698,6 +699,7 @@ public:
 	void UpdateAnimations();
 	/* if necessary, draw actor */
 	void Draw(const Region &screen);
+	bool DoStep(unsigned int walk_speed, ieDword time = 0);
 
 	/* add mobile vvc (spell effects) to actor's list */
 	void AddVVCell(ScriptedAnimation* vvc);
@@ -882,6 +884,7 @@ public:
 	void SetDisarmingTrap(ieDword trapId) { disarmTrap = trapId; }
 	ieDword GetDisarmingTrap() const { return disarmTrap; }
 	void ReleaseCurrentAction();
+	bool ConcentrationCheck() const;
 };
 }
 

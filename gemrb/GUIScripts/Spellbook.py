@@ -20,10 +20,11 @@
 
 import GemRB
 import CommonTables
+import GameCheck
 from GUIDefines import *
 from ie_stats import *
 from ie_action import ACT_LEFT, ACT_RIGHT
-from ie_spells import SP_IDENTIFY, SP_SURGE, LSR_KNOWN, LSR_LEVEL, LSR_STAT
+from ie_spells import SP_IDENTIFY, SP_SURGE, LSR_KNOWN, LSR_LEVEL, LSR_STAT, LSR_FULL
 from ie_restype import RES_2DA
 
 #################################################################
@@ -44,7 +45,7 @@ def itemgetter(*items):
 def GetUsableMemorizedSpells(actor, BookType):
 	memorizedSpells = []
 	spellResRefs = []
-	for level in range (9):
+	for level in range (10):
 		spellCount = GemRB.GetMemorizedSpellsCount (actor, BookType, level, False)
 		for i in range (spellCount):
 			Spell0 = GemRB.GetMemorizedSpell (actor, BookType, level, i)
@@ -266,6 +267,7 @@ def SetupSpellIcons(Window, BookType, Start=0, Offset=0):
 		else:
 			Button.SetState (IE_GUI_BUTTON_UNPRESSED)
 			Button.SetEvent (IE_GUI_BUTTON_ON_PRESS, GUICommonWindows.SpellPressed)
+			Button.SetEvent (IE_GUI_BUTTON_ON_SHIFT_PRESS, GUICommonWindows.SpellShiftPressed)
 
 		if Spell['SpellResRef']:
 			Button.SetSprites ("guibtbut", 0, 0,1,2,3)
@@ -409,7 +411,7 @@ def CannotLearnSlotSpell ():
 		return LSR_STAT
 
 	import GUICommon
-	if GUICommon.GameIsPST():
+	if GameCheck.IsPST():
 		import GUIINV
 		slot, slot_item = GUIINV.ItemHash[GemRB.GetVar ('ItemButton')]
 	else:

@@ -44,6 +44,7 @@
 #include "WorldMap.h"
 #include "GUI/GameControl.h"
 #include "GUI/EventMgr.h"
+#include "RNG/RNG_SFMT.h"
 #include "Scriptable/Container.h"
 #include "Scriptable/Door.h"
 #include "Scriptable/InfoPoint.h"
@@ -988,7 +989,7 @@ void GameScript::WaitRandom(Scriptable* Sender, Action* parameters)
 		if (width<2) {
 			width = parameters->int0Parameter;
 		} else {
-			width = rand() % width + parameters->int0Parameter;
+			width = RAND(0, width-1) + parameters->int0Parameter;
 		}
 		Sender->CurrentActionState = width * AI_UPDATE_TIME;
 	} else {
@@ -1041,7 +1042,7 @@ void GameScript::SmallWaitRandom(Scriptable* Sender, Action* parameters)
 		if (random<1) {
 			random = 1;
 		}
-		Sender->CurrentActionState = rand() % random + parameters->int0Parameter;
+		Sender->CurrentActionState = RAND(0, random-1) + parameters->int0Parameter;
 	} else {
 		Sender->CurrentActionState--;
 	}
@@ -1679,7 +1680,7 @@ void GameScript::FloatMessageFixedRnd(Scriptable* Sender, Action* parameters)
 		Log(ERROR, "GameScript", "Cannot display resource!");
 		return;
 	}
-	DisplayStringCore(target, rndstr->at(rand()%rndstr->size()), DS_CONSOLE|DS_HEAD);
+	DisplayStringCore(target, rndstr->at(RAND(0, rndstr->size()-1)), DS_CONSOLE|DS_HEAD);
 	FreeSrc(rndstr, parameters->string0Parameter);
 }
 
@@ -1696,7 +1697,7 @@ void GameScript::FloatMessageRnd(Scriptable* Sender, Action* parameters)
 		Log(ERROR, "GameScript", "Cannot display resource!");
 		return;
 	}
-	DisplayStringCore(target, rndstr->at(rand()%rndstr->size()), DS_CONSOLE|DS_HEAD);
+	DisplayStringCore(target, rndstr->at(RAND(0, rndstr->size()-1)), DS_CONSOLE|DS_HEAD);
 	FreeSrc(rndstr, parameters->string0Parameter);
 }
 
@@ -2102,6 +2103,7 @@ void GameScript::SetMyTarget(Scriptable* Sender, Action* parameters)
 		actor->LastTarget = 0;
 		return;
 	}
+	actor->LastSpellTarget = 0;
 	actor->LastTarget = tar->GetGlobalID();
 }
 
@@ -2534,7 +2536,7 @@ void GameScript::OpenDoor(Scriptable* Sender, Action* parameters) {
 		return;
 	}
 	Door* door = ( Door* ) tar;
-	int gid = 0;
+	int gid = Sender->GetGlobalID();
 	// no idea if this is right, or whether OpenDoor/CloseDoor should allow opening
 	// of all doors, or some doors, or whether it should still check for non-actors
 	if (Sender->Type == ST_ACTOR) {
@@ -2543,7 +2545,6 @@ void GameScript::OpenDoor(Scriptable* Sender, Action* parameters) {
 		if (!door->TryUnlock(actor)) {
 			return;
 		}
-		gid = actor->GetGlobalID();
 	}
 	//if not an actor opens, it don't play sound
 	door->SetDoorOpen(true, (Sender->Type == ST_ACTOR), gid);
@@ -2593,6 +2594,8 @@ void GameScript::ToggleDoor(Scriptable* Sender, Action* /*parameters*/)
 		actor->SetOrientation( GetOrient( *otherp, actor->Pos ), false);
 		if (!door->TryUnlock(actor)) {
 			displaymsg->DisplayConstantString(STR_DOORLOCKED, DMC_LIGHTGREY, door);
+			door->AddTrigger(TriggerEntry(trigger_failedtoopen, actor->GetGlobalID()));
+
 			//playsound unsuccessful opening of door
 			if(door->IsOpen())
 				core->PlaySound(DS_CLOSE_FAIL);
@@ -3306,6 +3309,12 @@ void GameScript::IncrementGlobalOnce(Scriptable* Sender, Action* parameters)
 	if (value != 0) {
 		return;
 	}
+	//todo:the actual behaviour of this opcode may need to be verified, as this is
+	//just a best guess at how the two parameters are changed, and could
+	//well be more complex; the original usage of this function is currently
+	//not well understood (relates to hardcoded alignment changes)
+	SetVariable( Sender, parameters->string0Parameter, parameters->int0Parameter );
+
 	value = CheckVariable( Sender, parameters->string1Parameter );
 	SetVariable( Sender, parameters->string1Parameter,
 		value + parameters->int0Parameter );
@@ -3494,8 +3503,7 @@ void GameScript::ClearAllActions(Scriptable* Sender, Action* /*parameters*/)
 			if (!act->ValidTarget(GA_NO_DEAD) ) {
 				continue;
 			}
-			act->ClearActions();
-			act->ClearPath();
+			act->Stop();
 			act->SetModal(MS_NONE);
 		}
 	}
@@ -3512,13 +3520,7 @@ void GameScript::ClearActions(Scriptable* Sender, Action* parameters)
 			return;
 		}
 	}
-	tar->ClearActions();
-	if (tar->Type==ST_ACTOR) {
-		Actor* act = (Actor *) tar;
-		act->ClearPath();
-		//not sure about this
-		//act->SetModal(MS_NONE);
-	}
+	tar->Stop();
 }
 
 void GameScript::SetNumTimesTalkedTo(Scriptable* Sender, Action* parameters)
@@ -4420,12 +4422,16 @@ void GameScript::PickPockets(Scriptable *Sender, Action* parameters)
 	int tgt = scr->GetStat(IE_PICKPOCKET);
 	int check;
 	if (core->HasFeature(GF_3ED_RULES)) {
+		int skill = snd->GetSkill(IE_PICKPOCKET);
 		int roll = core->Roll(1, 20, 0);
 		int level = scr->GetXPLevel(true);
 		int wismod = scr->GetAbilityBonus(IE_WIS);
 		// ~Pick pocket check. (10 + skill w/Dex bonus) %d vs. ((d20 + target's level) + Wisdom modifier) %d + %d.~
 		displaymsg->DisplayRollStringName(39302, DMC_LIGHTGREY, snd, 10+skill, roll+level, wismod);
 		check = (10 + skill) > (roll + level + wismod);
+		if (skill == 0) { // a trained skill, make sure we fail
+			check = 1;
+		}
 	} else {
 		//the original engine has no random here
 		if (tgt != 255) {
@@ -4619,11 +4625,7 @@ void GameScript::DemoEnd(Scriptable* Sender, Action* parameters)
 
 void GameScript::StopMoving(Scriptable* Sender, Action* /*parameters*/)
 {
-	if (Sender->Type!=ST_ACTOR) {
-		return;
-	}
-	Actor *actor = (Actor *) Sender;
-	actor->ClearPath();
+	Sender->Stop();
 }
 
 void GameScript::ApplyDamage(Scriptable* Sender, Action* parameters)
@@ -4734,11 +4736,8 @@ void GameScript::Berserk(Scriptable* Sender, Action* /*parameters*/)
 	if (!target) {
 		Sender->SetWait(6);
 	} else {
-		char Tmp[40];
-
 		//generate attack action
-		sprintf( Tmp, "NIDSpecial3()");
-		Action *newaction = GenerateActionDirect(Tmp, target);
+		Action *newaction = GenerateActionDirect("NIDSpecial3()", target);
 		if (newaction) {
 			Sender->AddActionInFront(newaction);
 		}
@@ -4996,9 +4995,7 @@ void GameScript::ForceAttack( Scriptable* Sender, Action* parameters)
 		GameControl *gc = core->GetGameControl();
 		if (gc) {
 			//saving the target object ID from the gui variable
-			char Tmp[40];
-			strlcpy(Tmp, "NIDSpecial3()", sizeof(Tmp));
-			scr->AddAction( GenerateActionDirect(Tmp, (Actor *) tar) );
+			scr->AddAction( GenerateActionDirect("NIDSpecial3()", (Actor *) tar) );
 		}
 	} else {
 		char Tmp[80];
@@ -5399,7 +5396,7 @@ void GameScript::RandomFly(Scriptable* Sender, Action* /*parameters*/)
 		return;
 	}
 	Actor* actor = ( Actor* ) Sender;
-	int x = rand()&31;
+	int x = RAND(0,31);
 	if (x<10) {
 		actor->SetOrientation(actor->GetOrientation()-1, false);
 	} else if (x>20) {
@@ -5484,9 +5481,7 @@ void GameScript::ForceUseContainer(Scriptable* Sender, Action* parameters)
 		Sender->ReleaseCurrentAction(); //why blocking???
 		return;
 	}
-	char Tmp[256];
-	sprintf( Tmp, "UseContainer()");
-	Action *newaction = GenerateAction(Tmp);
+	Action *newaction = GenerateAction("UseContainer()");
 	tar->AddActionInFront(newaction);
 	Sender->ReleaseCurrentAction(); //why blocking???
 }
@@ -5652,7 +5647,7 @@ void GameScript::RandomTurn(Scriptable* Sender, Action* /*parameters*/)
 		return;
 	}
 	Actor *actor = (Actor *) Sender;
-	actor->SetOrientation(rand() % MAX_ORIENT, true);
+	actor->SetOrientation(RAND(0, MAX_ORIENT-1), true);
 	actor->SetWait( 1 );
 	Sender->ReleaseCurrentAction(); // todo, blocking?
 }
@@ -6834,7 +6829,7 @@ void GameScript::DisableFogDither(Scriptable* /*Sender*/, Action* /*parameters*/
 	core->FogOfWar&=~FOG_DRAWFOG;
 }
 
-void DeleteAllSpriteCovers()
+static void DeleteAllSpriteCovers()
 {
 	Game *game = core->GetGame();
 	int i = game->GetPartySize(false);
@@ -6852,7 +6847,7 @@ void GameScript::EnableSpriteDither(Scriptable* /*Sender*/, Action* /*parameters
 
 void GameScript::DisableSpriteDither(Scriptable* /*Sender*/, Action* /*parameters*/)
 {
-	core->FogOfWar|=~FOG_DITHERSPRITES;
+	core->FogOfWar |= FOG_DITHERSPRITES;
 	DeleteAllSpriteCovers();
 }
 

@@ -116,6 +116,7 @@ struct Effect {
 	ieDword Parameter4;
 	ieDword Parameter5;
 	ieDword Parameter6;
+	ieDword SourceX, SourceY;
 	ieDword PosX, PosY;
 	ieDword SourceType; //1-item, 2-spell
 	ieResRef Source;
@@ -130,6 +131,8 @@ struct Effect {
 	ieDword CasterID;       //10c in bg2 (not saved?)
 	// These are not in the IE files, but are our precomputed values
 	ieDword random_value;
+
+	ieDword SpellLevel; // Power does not always contain the Source level, which is needed in iwd2; items will be left at 0
 public:
 	//don't modify position in case it was already set
 	void SetPosition(const Point &p) {
@@ -138,10 +141,13 @@ public:
 			PosY=p.y;
 		}
 	}
+	void SetSourcePosition(const Point &p) {
+		if(SourceX==0xffffffff && SourceY==0xffffffff) {
+			SourceX=p.x;
+			SourceY=p.y;
+		}
+	}
 };
-
-// FIXME: what about area spells? They can have map & coordinates as target
-//void AddEffect(Effect* fx, Actor* self, Actor* pretarget);
 
 }
 

@@ -41,9 +41,8 @@ Font::Font()
 
 	if (stricmp(core->TLKEncoding.encoding.c_str(), "UTF-8") == 0) {
 		utf8 = true;
+		assert(multibyte);
 	}
-	// utf8 & multibyte are mutually exclusive
-	assert(utf8 == false || multibyte == false);
 }
 
 Font::~Font(void)
@@ -88,17 +87,17 @@ void Font::PrintFromLine(int startrow, Region rgn, const unsigned char* string,
 	ieWord* tmp = NULL;
 	size_t len = GetDoubleByteString(string, tmp);
 
-	int num_empty_rows = 0;
+	ieWord num_empty_rows = 0;
 
 	if (initials && initials != this)
 	{
 		capital=1;
 		enablecap=true;
 		initials_rows = 1 + ((initials->maxHeight - 1) / maxHeight); // ceiling
-		currCap = string[0];
+		currCap = tmp[0];
 		if ((startrow > 0 && initials_rows > 0) || (len > 0 && isspace(currCap))) { // we need to look back to get the cap
-			while(isspace(currCap) && num_empty_rows < (int)len){//we cant cap whiteSpace so keep looking
-				currCap = string[++num_empty_rows];
+			while(isspace(currCap) && num_empty_rows < len){//we cant cap whiteSpace so keep looking
+				currCap = tmp[++num_empty_rows];
 				// WARNING: this assumes all preceeding whiteSpace is an empty line
 			}
 			last_initial_row = startrow - 1; // always the row before current since this cannot be the first row
@@ -125,7 +124,7 @@ void Font::PrintFromLine(int startrow, Region rgn, const unsigned char* string,
 		ystep = maxHeight;
 	}
 	int x = psx, y = ystep;
-	int w = CalcStringWidth( tmp, NoColor );
+	size_t w = CalcStringWidth( tmp, NoColor );
 	if (Alignment & IE_FONT_ALIGN_CENTER) {
 		x = ( rgn.w - w) / 2;
 	} else if (Alignment & IE_FONT_ALIGN_RIGHT) {
@@ -210,7 +209,7 @@ void Font::PrintFromLine(int startrow, Region rgn, const unsigned char* string,
 		if (( tmp[i] == 0 ) || ( tmp[i] == '\n' )) {
 			y += ystep;
 			x = psx;
-			int w = CalcStringWidth( &tmp[i + 1], NoColor );
+			size_t w = CalcStringWidth( &tmp[i + 1], NoColor );
 			if (initials_rows > 0) {
 				initials_rows--;
 				x += initials_x;
@@ -318,10 +317,10 @@ void Font::Print(Region cliprgn, Region rgn, const unsigned char* string,
 	Video* video = core->GetVideoDriver();
 
 	if (Alignment & IE_FONT_ALIGN_CENTER) {
-		int w = CalcStringWidth( tmp, NoColor );
+		size_t w = CalcStringWidth( tmp, NoColor );
 		x = ( rgn.w - w ) / 2;
 	} else if (Alignment & IE_FONT_ALIGN_RIGHT) {
-		int w = CalcStringWidth( tmp, NoColor );
+		size_t w = CalcStringWidth( tmp, NoColor );
 		x = ( rgn.w - w ) - IE_FONT_PADDING;
 	}
 
@@ -393,7 +392,7 @@ void Font::Print(Region cliprgn, Region rgn, const unsigned char* string,
 		if (tmp[i] == 0) {
 			y += ystep;
 			x = psx;
-			int w = CalcStringWidth( &tmp[i + 1], NoColor );
+			size_t w = CalcStringWidth( &tmp[i + 1], NoColor );
 			if (Alignment & IE_FONT_ALIGN_CENTER) {
 				x = ( rgn.w - w ) / 2;
 			} else if (Alignment & IE_FONT_ALIGN_RIGHT) {
@@ -435,7 +434,7 @@ int Font::PrintInitial(int x, int y, const Region &rgn, ieWord currChar) const
 	return x;
 }
 
-int Font::CalcStringWidth(const unsigned char* string, bool NoColor) const
+size_t Font::CalcStringWidth(const unsigned char* string, bool NoColor) const
 {
 	ieWord* tmp = NULL;
 	GetDoubleByteString(string, tmp);
@@ -444,7 +443,7 @@ int Font::CalcStringWidth(const unsigned char* string, bool NoColor) const
 	return width;
 }
 
-int Font::CalcStringWidth(const ieWord* string, bool NoColor) const
+size_t Font::CalcStringWidth(const ieWord* string, bool NoColor) const
 {
 	size_t ret = 0, len = dbStrLen(string);
 	for (size_t i = 0; i < len; i++) {
@@ -457,10 +456,10 @@ int Font::CalcStringWidth(const ieWord* string, bool NoColor) const
 			ret += GetCharSprite(string[i])->Width;
 		}
 	}
-	return ( int ) ret;
+	return ret;
 }
 
-int Font::CalcStringHeight(const ieWord* string, unsigned int len, bool NoColor) const
+size_t Font::CalcStringHeight(const ieWord* string, unsigned int len, bool NoColor) const
 {
 	int h, max = 0;
 	for (unsigned int i = 0; i < len; i++) {
@@ -485,7 +484,7 @@ void Font::SetupString(ieWord* string, unsigned int width, bool NoColor, Font *i
 {
 	size_t len = dbStrLen(string);
 	unsigned int psx = IE_FONT_PADDING;
-	int lastpos = 0;
+	size_t lastpos = 0;
 	unsigned int x = psx, wx = 0;
 	bool endword = false;
 	int initials_rows = 0;
@@ -494,7 +493,7 @@ void Font::SetupString(ieWord* string, unsigned int width, bool NoColor, Font *i
 		if (x + wx > width) {
 			// we wrapped, force a new line somewhere
 			if (!endword && ( x == psx ))
-				lastpos = ( int ) pos;
+				lastpos = pos;
 			else
 				string[lastpos] = 0;
 			x = psx;
@@ -518,7 +517,7 @@ void Font::SetupString(ieWord* string, unsigned int width, bool NoColor, Font *i
 				initials_rows--;
 				x += initials_x;
 			}
-			lastpos = ( int ) pos;
+			lastpos = pos;
 			endword = true;
 			continue;
 		}
@@ -567,7 +566,7 @@ void Font::SetupString(ieWord* string, unsigned int width, bool NoColor, Font *i
 		if (( string[pos] == ' ' ) || ( string[pos] == '-' )) {
 			x += wx;
 			wx = 0;
-			lastpos = ( int ) pos;
+			lastpos = pos;
 			endword = true;
 		}
 	}
@@ -575,22 +574,53 @@ void Font::SetupString(ieWord* string, unsigned int width, bool NoColor, Font *i
 
 size_t Font::GetDoubleByteString(const unsigned char* string, ieWord* &dbString) const
 {
-	if (utf8)
-	{
-		return GetUtf8String(string, dbString);
-	}
 	size_t len = strlen((char*)string);
 	dbString = (ieWord*)malloc((len+1) * sizeof(ieWord));
 	size_t dbLen = 0;
 	for(size_t i=0; i<len; ++i)
 	{
+		ieWord currentChr = string[i];
 		// we are assuming that every multibyte encoding uses single bytes for chars 32 - 127
-		if( multibyte && (i+1 < len) && (string[i] >= 128 || string[i] < 32)) { // this is a double byte char
-			dbString[dbLen] = (string[i+1] << 8) + string[i];
-			++i;
-		} else
-			dbString[dbLen] = string[i];
-		assert(dbString[dbLen] != 0);
+		if( multibyte && (i+1 < len) && (currentChr >= 128 || currentChr < 32)) { // this is a double byte char
+			if (utf8) {
+				size_t nb = 0;
+				if (currentChr >= 0xC0 && currentChr <= 0xDF) {
+					/* c0-df are first byte of two-byte sequences (5+6=11 bits) */
+					/* c0-c1 are noncanonical */
+					nb = 2;
+				} else if (currentChr >= 0xE0 && currentChr <= 0XEF) {
+					/* e0-ef are first byte of three-byte (4+6+6=16 bits) */
+					/* e0 80-9f are noncanonical */
+					nb = 3;
+				} else if (currentChr >= 0xF0 && currentChr <= 0XF7) {
+					/* f0-f7 are first byte of four-byte (3+6+6+6=21 bits) */
+					/* f0 80-8f are noncanonical */
+					nb = 4;
+				} else if (currentChr >= 0xF8 && currentChr <= 0XFB) {
+					/* f8-fb are first byte of five-byte (2+6+6+6+6=26 bits) */
+					/* f8 80-87 are noncanonical */
+					nb = 5;
+				} else if (currentChr >= 0xFC && currentChr <= 0XFD) {
+					/* fc-fd are first byte of six-byte (1+6+6+6+6+6=31 bits) */
+					/* fc 80-83 are noncanonical */
+					nb = 6;
+				} else {
+					Log(WARNING, "Font", "Invalid UTF-8 character: %x", currentChr);
+					continue;
+				}
+
+				ieWord ch = currentChr & ((1 << (7 - nb)) - 1);
+				while (--nb)
+					ch <<= 6, ch |= string[++i] & 0x3f;
+
+				dbString[dbLen] = ch;
+			} else {
+				dbString[dbLen] = (string[++i] << 8) + currentChr;
+			}
+		} else {
+			dbString[dbLen] = currentChr;
+		}
+		assert(dbString[dbLen] != 0); // premature end of string
 		++dbLen;
 	}
 	dbString[dbLen] = '\0';
@@ -627,81 +657,13 @@ void Font::SetPalette(Palette* pal)
 	palette = pal;
 }
 
-int Font::dbStrLen(const ieWord* string) const
+size_t Font::dbStrLen(const ieWord* string)
 {
 	if (string == NULL) return 0;
 	int count = 0;
 	for ( ; string[count] != 0; count++)
 		continue; // intentionally empty loop
 	return count;
-}
-
-/* The first byte of a UTF-8 encoding reveals its length. */
-unsigned char utf8_bytes[0x100] = {
-    /* 00-7f are themselves */
-/*00*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*10*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*20*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*30*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*40*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*50*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*60*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*70*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    /* 80-bf are later bytes, out-of-sync if first */
-/*80*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*90*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*a0*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-/*b0*/ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    /* c0-df are first byte of two-byte sequences (5+6=11 bits) */
-    /* c0-c1 are noncanonical */
-/*c0*/ 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-/*d0*/ 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    /* e0-ef are first byte of three-byte (4+6+6=16 bits) */
-    /* e0 80-9f are noncanonical */
-/*e0*/ 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-    /* f0-f7 are first byte of four-byte (3+6+6+6=21 bits) */
-    /* f0 80-8f are noncanonical */
-/*f0*/ 4, 4, 4, 4, 4, 4, 4, 4,
-    /* f8-fb are first byte of five-byte (2+6+6+6+6=26 bits) */
-    /* f8 80-87 are noncanonical */
-/*f8*/ 5, 5, 5, 5,
-    /* fc-fd are first byte of six-byte (1+6+6+6+6+6=31 bits) */
-    /* fc 80-83 are noncanonical */
-/*fc*/ 6, 6,
-    /* fe and ff are not part of valid UTF-8 so they stand alone */
-/*fe*/ 1, 1
-};
-
-ieWord Font::readUtf8(const unsigned char *src, size_t *readed_length) const
-{
-    size_t nb = utf8_bytes[*src];
-
-    *readed_length = nb;
-    if (nb <= 1 || nb > 6)
-        return *src;
-    ieWord ch = *src & ((1 << (7 - nb)) - 1);
-    while (--nb)
-        ch <<= 6, ch |= *++src & 0x3f;
-
-    return ch;
-}
-
-size_t Font::GetUtf8String(const unsigned char* utf8String, ieWord* &utf16String) const
-{
-	size_t utf8Len = strlen((char*)utf8String);
-	utf16String = (ieWord*)malloc((utf8Len+1) * sizeof(ieWord));
-	size_t utf16Len = 0;
-	while (utf8Len > 0)
-	{
-		size_t len;
-		utf16String[utf16Len] = readUtf8(utf8String, &len);
-		utf8Len -= len;
-		utf8String += len;
-		utf16Len++;
-	}
-	utf16String[utf16Len] = '\0';
-	utf16String = (ieWord*)realloc(utf16String, (utf16Len+1) * sizeof(ieWord));
-	return utf16Len;
 }
 
 }

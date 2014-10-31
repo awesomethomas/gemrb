@@ -32,10 +32,10 @@
 #include "exports.h"
 
 #include "Dialog.h"
-#include "Interface.h"
 
 namespace GemRB {
 
+class Font;
 class Palette;
 class WMPAreaEntry;
 class WorldMapControl;
@@ -58,18 +58,20 @@ class WorldMapControl;
 #define IE_GUI_MOUSE_ENTER_WORLDMAP  0x08000002
 
 class GEM_EXPORT WorldMapControl : public Control {
+protected:
+	/** Draws the Control on the Output Display */
+	void DrawInternal(Region& drawFrame);
 public:
-	WorldMapControl(const char *fontname, int direction);
+	WorldMapControl(const Region& frame, const char *fontname, int direction);
 	~WorldMapControl(void);
 
 	/** Allows modification of the scrolling factor from outside */
 	void AdjustScrolling(short x, short y);
-	/** Draws the Control on the Output Display */
-	void Draw(unsigned short x, unsigned short y);
 	/** Sets the exit direction (we need this to calculate distances) */
 	void SetDirection(int direction);
 	/** Set color for one type of area labels */
 	void SetColor(int which, Color color);
+	void SetOverrideIconPalette(bool override) { OverrideIconPalette = override; };
 	int ScrollX, ScrollY;
 	unsigned short lastMouseX, lastMouseY;
 	bool MouseIsDown;
@@ -84,6 +86,8 @@ private:
 	unsigned char lastCursor;
 	//current area
 	ieResRef currentArea;
+	// bg1 needs entry icon recoloring, as the data palettes are a pure bw gradient
+	bool OverrideIconPalette;
 	/** Label color of a visited area */
 	Palette *pal_normal;
 	/** Label color of a currently selected area */

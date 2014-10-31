@@ -37,6 +37,7 @@ MUSImporter::MUSImporter()
 	Playing = false;
 	str = new FileStream();
 	PLpos = 0;
+	PLnext = -1;
 	PLName[0] = '\0';
 	PLNameNew[0] = '\0';
 	lastSound = 0xffffffff;
@@ -120,7 +121,11 @@ bool MUSImporter::OpenPlaylist(const char* name)
 				else
 					break;
 			}
-			pls.PLTag[p] = 0;
+			if (p < 9) {
+				pls.PLTag[p] = 0;
+			} else {
+				pls.PLTag[9] = 0;
+			}
 			p = 0;
 			while (i < len) {
 				if (( line[i] == ' ' ) || ( line[i] == '\t' ))
@@ -239,7 +244,7 @@ int MUSImporter::SwitchPlayList(const char* name, bool Hard)
 		//if still playing, then don't insist on trying to open it now
 		//either HardEnd stopped it for us, or End marked it for early ending
 		if (Playing) {
-			strncpy(PLNameNew, name, sizeof(PLNameNew) );
+			strlcpy(PLNameNew, name, sizeof(PLNameNew) );
 			return 0;
 		}
 	}
@@ -306,7 +311,7 @@ void MUSImporter::PlayMusic(char* name)
 		snprintf(File, _MAX_PATH, "%s%s", PLName, name);
 		PathJoin(FName, PLName, File, NULL);
 	} else {
-		strncpy(FName, name, _MAX_PATH);
+		strlcpy(FName, name, _MAX_PATH);
 	}
 
 	ResourceHolder<SoundMgr> sound(FName, manager);

@@ -94,18 +94,33 @@ static const unsigned long tp_steps[8]={3,2,1,0,1,2,3,4};
  */
 
 class GEM_EXPORT GameControl : public Control {
+	enum WINDOW_GROUP {
+		WINDOW_GROUP_LEFT,
+		WINDOW_GROUP_BOTTOM,
+		WINDOW_GROUP_RIGHT,
+		WINDOW_GROUP_TOP,
+		WINDOW_GROUP_COUNT
+	};
+	enum WINDOW_RESIZE_OPERATION {
+		WINDOW_EXPAND = -1,
+		WINDOW_CONTRACT = 1
+	};
 public:
-	GameControl(void);
+	GameControl(const Region& frame);
 	~GameControl(void);
-public:
+protected:
 	/** Draws the Control on the Output Display */
-	void Draw(unsigned short x, unsigned short y);
+	void DrawInternal(Region& drawFrame);
+	// GameControl always needs to redraw
+	bool NeedsDraw() { return true; };
+public:
 	/** Draws the target reticle for Actor movement. */
 	void DrawTargetReticle(Point p, int size, bool animate, bool flash=false, bool actorSelected=false);
 	/** Sets multiple quicksaves flag*/
 	//static void MultipleQuickSaves(int arg);
 	void SetTracker(Actor *actor, ieDword dist);
 private:
+	int windowGroupCounts[WINDOW_GROUP_COUNT];
 	ieDword lastActorID;
 	ieDword trackerID;
 	ieDword distance;  //tracking distance
@@ -115,14 +130,8 @@ private:
 	bool MouseIsDown;
 	bool DoubleClick;
 	Region SelectionRect;
-	Point FormationPivotPoint;
 	Point FormationApplicationPoint;
-	short StartX, StartY;
-	// following variables used for touch scroll areas
-	bool touchScrollAreasEnabled; // true, if scroll areas enabled
-	bool touched; // true, if player touched screen (left button down and hold)
-	unsigned int scrollAreasWidth; // scroll areas width
-
+	Point ClickPoint;
 public:
 	Door* overDoor;
 	Container* overContainer;
@@ -180,20 +189,17 @@ public: //Events
 	/* centers viewport to the points specified */
 	void Center(unsigned short x, unsigned short y);
 	void ClearMouseState();
+	void MoveViewportTo(int x, int y, bool center);
 private:
 	/** this function safely retrieves an Actor by ID */
 	Actor *GetActorByGlobalID(ieDword ID);
 	void CalculateSelection(const Point &p);
-	void ResizeDel(Window* win, int type);
-	void ResizeAdd(Window* win, int type);
-	void HandleWindowHide(const char *WindowName, const char *WindowPosition);
-	void HandleWindowReveal(const char *WindowName, const char *WindowPosition);
+	void ResizeParentWindowFor(Window* win, int type, WINDOW_RESIZE_OPERATION);
 	void ReadFormations();
 	/** Draws an arrow on the edge of the screen based on the point (points at offscreen actors) */
 	void DrawArrowMarker(const Region &screen, Point p, const Region &viewport, const Color& color);
 
 private:
-	unsigned char LeftCount, BottomCount, RightCount, TopCount;
 	Actor *user;     //the user of item or spell
 public:
 	DialogHandler *dialoghandler;
@@ -210,8 +216,7 @@ public:
 	void SelectActor(int whom, int type = -1);
 	void SetLastActor(Actor *actor, Actor *prevActor);
 	void SetCutSceneMode(bool active);
-	int HideGUI();
-	int UnhideGUI();
+	bool SetGUIHidden(bool hide);
 	void TryToAttack(Actor *source, Actor *target);
 	void TryToCast(Actor *source, const Point &p);
 	void TryToCast(Actor *source, Actor *target);
@@ -247,7 +252,7 @@ public:
 	/** changes map to the current PC */
 	void ChangeMap(Actor *pc, bool forced);
 	/** Returns game screenshot, with or without GUI controls */
-	Sprite2D* GetScreenshot( bool show_gui = 0 );
+	Sprite2D* GetScreenshot(const Region& rgn, bool show_gui = false );
 	/** Returns current area preview for saving a game */
 	Sprite2D* GetPreview();
 	/** Returns PC portrait for a currently running game */
