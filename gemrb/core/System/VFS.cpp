@@ -493,8 +493,9 @@ GEM_EXPORT char* CopyGemDataPath(char* outPath, ieWord maxLen)
 
 
 DirectoryIterator::DirectoryIterator(const char *path)
-	: Directory(NULL), Entry(NULL), Path(path)
+	: predicate(NULL), Directory(NULL), Entry(NULL)
 {
+	Path = strdup(path);
 	Rewind();
 }
 
@@ -502,6 +503,19 @@ DirectoryIterator::~DirectoryIterator()
 {
 	if (Directory)
 		closedir(static_cast<DIR*>(Directory));
+	free(Path);
+	delete predicate;
+}
+
+void DirectoryIterator::SetFilterPredicate(FileFilterPredicate* p, bool chain)
+{
+	if (chain && predicate) {
+		predicate = new AndPredicate<const char*>(predicate, p);
+	} else {
+		delete predicate;
+		predicate = p;
+	}
+	Rewind();
 }
 
 bool DirectoryIterator::IsDirectory()
@@ -513,7 +527,7 @@ bool DirectoryIterator::IsDirectory()
 	return dir_exists(dtmp);
 }
 
-char* DirectoryIterator::GetName()
+const char* DirectoryIterator::GetName()
 {
 	return static_cast<dirent*>(Entry)->d_name;
 }
@@ -525,7 +539,10 @@ void DirectoryIterator::GetFullPath(char *name)
 
 DirectoryIterator& DirectoryIterator::operator++()
 {
-	Entry = readdir(static_cast<DIR*>(Directory));
+	do {
+		Entry = readdir(static_cast<DIR*>(Directory));
+	} while (predicate && Entry && !(*predicate)(GetName()));
+
 	return *this;
 }
 
@@ -537,7 +554,7 @@ void DirectoryIterator::Rewind()
 	if (Directory == NULL)
 		Entry = NULL;
 	else
-		Entry = readdir(static_cast<DIR*>(Directory));
+		this->operator++();
 }
 
 

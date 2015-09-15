@@ -26,6 +26,7 @@
 #include "Variables.h"
 
 #include <list>
+#include <map>
 
 namespace GemRB {
 
@@ -48,10 +49,7 @@ class SpriteCover;
 
 #define MAX_SCRIPTS		8
 #define MAX_GROUND_ICON_DRAWN   3
-#define MAX_TIMER		256
 
-/** The distance of operating a trigger, container, etc. */
-#define MAX_OPERATING_DISTANCE      40 //a search square is 16x12
 /** The distance between PC's who are about to enter a new area */
 #define MAX_TRAVELING_DISTANCE      400
 
@@ -213,9 +211,7 @@ public:
 	virtual ~Scriptable(void);
 private:
 	unsigned long WaitCounter;
-	// script_timers should probably be a std::map to
-	// conserve memory (usually at most 2 ids are used)
-	ieDword script_timers[MAX_TIMER];
+	std::map<ieDword,ieDword> script_timers;
 	ieDword globalID;
 protected: //let Actor access this
 	std::list<TriggerEntry> triggers;
@@ -225,6 +221,12 @@ protected: //let Actor access this
 	ieResRef Dialog;
 	std::list< Action*> actionQueue;
 	Action* CurrentAction;
+
+	// Variables for overhead text.
+	Point overHeadTextPos;
+	bool overheadTextDisplaying;
+	unsigned long timeStartDisplaying;
+	String OverheadText;
 public:
 	// State relating to the currently-running action.
 	int CurrentActionState;
@@ -253,12 +255,6 @@ public:
 
 	GameScript* Scripts[MAX_SCRIPTS];
 	int scriptlevel;
-
-	// Variables for overhead text.
-	char* overHeadText;
-	Point overHeadTextPos;
-	unsigned char textDisplaying;
-	unsigned long timeStartDisplaying;
 
 	ieDword UnselectableTimer;
 
@@ -295,6 +291,7 @@ public:
 		return Dialog;
 	}
 	void SetDialog(const char *resref);
+	void SetFloatingText(char*);
 	void SetScript(const ieResRef aScript, int idx, bool ai=false);
 	void SetSpellResRef(ieResRef resref);
 	void SetWait(unsigned long time);
@@ -308,12 +305,15 @@ public:
 	void Deactivate();
 	void PartyRested();
 	ieDword GetInternalFlag() const;
-	void SetInternalFlag(int value, int mode);
+	void SetInternalFlag(unsigned int value, int mode);
 	const char* GetScriptName() const;
 	Map* GetCurrentArea() const;
 	void SetMap(Map *map);
 	void SetScript(int index, GameScript* script);
-	void DisplayHeadText(const char* text);
+	void SetOverheadText(const String& text, bool display = true);
+	const String& GetOverheadText() { return OverheadText; };
+	bool DisplayOverheadText(bool);
+	bool OverheadTextIsDisplaying() { return overheadTextDisplaying; }
 	void FixHeadTextPos();
 	void SetScriptName(const char* text);
 	//call this to enable script running as soon as possible
@@ -348,8 +348,8 @@ public:
 	int CheckWildSurge();
 	void SpellcraftCheck(const Actor *caster, const ieResRef SpellResRef);
 	/* internal spellcasting shortcuts */
-	void DirectlyCastSpellPoint(const Point &target, ieResRef spellref, int level, int no_stance, bool deplete, bool instant = false, bool nointerrupt = false);
-	void DirectlyCastSpell(Scriptable *target, ieResRef spellref, int level, int no_stance, bool deplete, bool instant = false, bool nointerrupt = false);
+	void DirectlyCastSpellPoint(const Point &target, ieResRef spellref, int level, int no_stance, bool deplete);
+	void DirectlyCastSpell(Scriptable *target, ieResRef spellref, int level, int no_stance, bool deplete);
 	/* actor/scriptable casts spell */
 	int CastSpellPoint( const Point &Target, bool deplete, bool instant = false, bool nointerrupt = false );
 	int CastSpell( Scriptable* Target, bool deplete, bool instant = false, bool nointerrupt = false );
@@ -365,7 +365,7 @@ public:
 	bool AuraPolluted();
 private:
 	/* used internally to handle start of spellcasting */
-	int SpellCast(bool instant);
+	int SpellCast(bool instant, Scriptable *target = NULL);
 	/* also part of the spellcasting process, creating the projectile */
 	void CreateProjectile(const ieResRef SpellResRef, ieDword tgt, int level, bool fake);
 	/* do some magic for the wierd/awesome wild surges */

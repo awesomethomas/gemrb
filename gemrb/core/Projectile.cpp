@@ -106,7 +106,7 @@ Projectile::~Projectile()
 			if(shadow[i])
 				delete shadow[i];
 		}
-		core->GetVideoDriver()->FreeSprite(light);
+		Sprite2D::FreeSprite(light);
 	}
 
 	if(children) {
@@ -442,11 +442,11 @@ Actor *Projectile::GetTarget()
 		target = area->GetActorByGlobalID(Target);
 		if (!target) return NULL;
 		Actor *original = area->GetActorByGlobalID(Caster);
-		if (original==target) {
-			effects->SetOwner(target);
+		if (!effects) {
 			return target;
 		}
-		if (!effects) {
+		if (original==target) {
+			effects->SetOwner(target);
 			return target;
 		}
 
@@ -456,8 +456,13 @@ Actor *Projectile::GetTarget()
 			return NULL;
 		}
 		if (res==-1) {
-			Target = original->GetGlobalID();
-			return NULL;
+			if (original) {
+				Target = original->GetGlobalID();
+				target = original;
+			} else {
+				Log(DEBUG, "Projectile", "GetTarget: caster not found, bailing out!");
+				return NULL;
+			}
 		}
 		effects->SetOwner(original);
 		return target;
@@ -558,8 +563,8 @@ void Projectile::Payload()
 
 	if (Target) {
 		target = GetTarget();
-		if (!target && (Target==Caster)) {
-			//projectile rebounced
+		if (!target) {
+			//projectile resisted or failed to bounce properly
 			return;
 		}
 	} else {
@@ -574,19 +579,9 @@ void Projectile::Payload()
 			target = area->GetActorByGlobalID(Caster);			
 		}
 	}
-	Actor *source = area->GetActorByGlobalID(Caster);
-	InfoPoint *source2 = area->GetInfoPointByGlobalID(Caster);
-	Container *source3 = area->GetContainerByGlobalID(Caster);
-	Door *source4 = area->GetDoorByGlobalID(Caster);
-	if (source) {
-		Owner = source;
-	} else if (source2) {
-		Owner = (Scriptable *) source2;
-	} else if (source3) {
-		Owner = (Scriptable *) source3;
-	} else if (source4) {
-		Owner = (Scriptable *) source4;
-	} else {
+	
+	Owner = area->GetScriptableByGlobalID(Caster);
+	if (!Owner) {
 		Log(WARNING, "Projectile", "Payload: Caster not found, using target!");
 		Owner = target;
 	}
@@ -1100,6 +1095,7 @@ void Projectile::LineTarget()
 				}
 
 				eff->AddAllEffects(target, target->Pos);
+				delete eff;
 			}
 		}
 		iter = iter->Next;

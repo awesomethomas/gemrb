@@ -28,7 +28,6 @@ from ie_spells import LS_MEMO
 from GUIDefines import *
 from ie_stats import *
 from ie_slots import SLOT_ALL
-from ie_feats import FEAT_STRONG_BACK
 
 OtherWindowFn = None
 NextWindowFn = None
@@ -212,7 +211,7 @@ def AddClassAbilities (pc, table, Level=1, LevelDiff=1, align=-1):
 	for i in range(iMin, iMax):
 		# apply each spell from each new class
 		for j in range (jMin, jMax):
-			ab = TmpTable.GetValue (i, j, 0)
+			ab = TmpTable.GetValue (i, j, GTV_STR)
 			if ab and ab != "****":
 				# seems all SPINs act like GA_*
 				if ab[:4] == "SPIN":
@@ -222,11 +221,7 @@ def AddClassAbilities (pc, table, Level=1, LevelDiff=1, align=-1):
 				if ab[:3] == "AP_":
 					GemRB.ApplySpell (pc, ab[3:])
 				elif ab[:3] == "GA_":
-					SpellIndex = Spellbook.HasSpell (pc, IE_SPELL_TYPE_INNATE, 0, ab[3:])
-					if SpellIndex == -1:
-						GemRB.LearnSpell (pc, ab[3:], LS_MEMO)
-					else:
-						GemRB.MemorizeSpell (pc, IE_SPELL_TYPE_INNATE, 0, SpellIndex)
+					Spellbook.LearnSpell (pc, ab[3:], IE_SPELL_TYPE_INNATE, 0, 1, LS_MEMO)
 				elif ab[:3] == "FS_":
 					Gain(26320, ab[3:])
 				elif ab[:3] == "FA_":
@@ -238,8 +233,9 @@ def MakeSpellCount (pc, spell, count):
 	have = GemRB.CountSpells (pc, spell, 1)
 	if count<=have:
 		return
-	for i in range (count-have):
-		GemRB.LearnSpell (pc, spell, LS_MEMO)
+	# only used for innates, which are all level 1
+	import Spellbook
+	Spellbook.LearnSpell (pc, spell, IE_IWD2_SPELL_INNATE, 0, count-have, LS_MEMO)
 	return
 	
 # remove all class abilities up to the given level
@@ -259,7 +255,7 @@ def RemoveClassAbilities (pc, table, Level):
 
 	for i in range(TmpTable.GetRowCount ()):
 		for j in range (jMax):
-			ab = TmpTable.GetValue (i, j, 0)
+			ab = TmpTable.GetValue (i, j, GTV_STR)
 			if ab and ab != "****":
 				# get the index
 				SpellIndex = Spellbook.HasSpell (pc, IE_SPELL_TYPE_INNATE, 0, ab[3:])
@@ -345,7 +341,8 @@ def SetEncumbranceLabels (Window, ControlID, Control2ID, pc, invert_colors = Fal
 
 	Control = Window.GetControl (ControlID)
 	if GameCheck.IsPST():
-		# FIXME: there should be a space before LB symbol (':')
+		# FIXME: there should be a space before LB symbol (':') - but there is no frame for it and our doesn't cut it 
+		Control.SetFlags (IE_GUI_BUTTON_MULTILINE, OP_OR)
 		Control.SetText (str (encumbrance) + ":\n\n" + str (max_encumb) + ":")
 	elif GameCheck.IsIWD2() and not Control2ID:
 		Control.SetText (str (encumbrance) + "/" + str(max_encumb) + GemRB.GetString(39537))
@@ -400,8 +397,7 @@ def GetActorClassTitle (actor):
 		Dual = IsDualClassed (actor, 1)
 
 		if Multi and Dual[0] == 0: # true multi class
-			ClassTitle = CommonTables.Classes.GetValue (ClassName, "CAP_REF")
-			ClassTitle = GemRB.GetString (ClassTitle)
+			ClassTitle = CommonTables.Classes.GetValue (ClassName, "CAP_REF", GTV_REF)
 		else:
 			if Dual[0]: # dual class
 				# first (previous) kit or class of the dual class
@@ -409,8 +405,10 @@ def GetActorClassTitle (actor):
 					ClassTitle = CommonTables.KitList.GetValue (Dual[1], 2)
 				elif Dual[0] == 2:
 					ClassTitle = CommonTables.Classes.GetValue (GetClassRowName(Dual[1], "index"), "CAP_REF")
-				ClassTitle = GemRB.GetString (ClassTitle) + " / "
-				ClassTitle += GemRB.GetString (CommonTables.Classes.GetValue (GetClassRowName(Dual[2], "index"), "CAP_REF"))
+				if ClassTitle != "*":
+					ClassTitle = GemRB.GetString (ClassTitle)
+				ClassTitle += " / "
+				ClassTitle += CommonTables.Classes.GetValue (GetClassRowName(Dual[2], "index"), "CAP_REF", GTV_REF)
 			else: # ordinary class or kit
 				if KitIndex:
 					ClassTitle = CommonTables.KitList.GetValue (KitIndex, 2)

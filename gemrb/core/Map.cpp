@@ -31,7 +31,6 @@
 #include "Game.h"
 #include "GameData.h"
 #include "IniSpawn.h"
-#include "Interface.h"
 #include "MapMgr.h"
 #include "MusicMgr.h"
 #include "ImageMgr.h"
@@ -88,6 +87,14 @@ static int tsndcount = -1;
 static void ReleaseSpawnGroup(void *poi)
 {
 	delete (SpawnGroup *) poi;
+}
+
+Spawn::Spawn() {
+	Creatures = NULL;
+	NextSpawn = Method = sduration = Count = Maximum = Difficulty = 0;
+	DayChance = NightChance = Enabled = Frequency = 0;
+	rwdist = owdist = appearance = 0;
+	Name[0] = 0;
 }
 
 void Map::ReleaseMemory()
@@ -393,7 +400,7 @@ Map::~Map(void)
 	}
 	delete LightMap;
 	delete HeightMap;
-	core->GetVideoDriver()->FreeSprite( SmallMap );
+	Sprite2D::FreeSprite( SmallMap );
 	for (i = 0; i < QUEUE_COUNT; i++) {
 		free(queue[i]);
 		queue[i] = NULL;
@@ -420,9 +427,6 @@ Map::~Map(void)
 	for (i = 0; i < ambients.size(); i++) {
 		delete ambients[i];
 	}
-	for (i = 0; i < mapnotes.size(); i++) {
-		delete mapnotes[i];
-	}
 
 	//malloc-d in AREImp
 	free( ExploredBitmap );
@@ -439,7 +443,7 @@ Map::~Map(void)
 void Map::ChangeTileMap(Image* lm, Sprite2D* sm)
 {
 	delete LightMap;
-	core->GetVideoDriver()->FreeSprite(SmallMap);
+	Sprite2D::FreeSprite(SmallMap);
 
 	LightMap = lm;
 	SmallMap = sm;
@@ -684,11 +688,9 @@ void Map::UpdateScripts()
 		//The default area script is in the last slot anyway
 		//ExecuteScript( MAX_SCRIPTS );
 		Update();
+	} else {
+		ProcessActions();
 	}
-
-	//Execute Pending Actions
-	//if it is only here, then the drawing will fail
-	ProcessActions();
 
 	// If scripts frozen, return.
 	// This fixes starting a new IWD game. The above ProcessActions pauses the
@@ -702,7 +704,7 @@ void Map::UpdateScripts()
 	Game *game = core->GetGame();
 	bool timestop = game->IsTimestopActive();
 	if (!timestop) {
-		game->timestop_owner = NULL;
+		game->SetTimestopOwner(NULL);
 	}
 
 	while (q--) {
@@ -788,14 +790,7 @@ void Map::UpdateScripts()
 		q=Qcount[PR_SCRIPT];
 		while (q--) {
 			Actor* actor = queue[PR_SCRIPT][q];
-
-			// try to exclude actors which only just died
-			// (shouldn't we not be stepping actors which don't have a path anyway?)
-			// following fails on Immobile creatures, don't think it's a problem, but replace with next line if it is
-			if (!actor->ValidTarget(GA_NO_DEAD)) continue;
-			//if (actor->GetStat(IE_STATE_ID)&STATE_DEAD || actor->GetInternalFlag() & IF_JUSTDIED) continue;
-
-			if (!DoStepForActor(actor, actor->speed, time)) more_steps = true;
+			more_steps = !DoStepForActor(actor, actor->speed, time);
 		}
 	}
 
@@ -892,7 +887,9 @@ void Map::ResolveTerrainSound(ieResRef &sound, Point &Pos) {
 }
 
 bool Map::DoStepForActor(Actor *actor, int speed, ieDword time) {
-	if (actor->Immobile()) {
+	// Impbile, dead, or actors in another map cant walk here
+	if (actor->Immobile() || actor->GetCurrentArea() != this
+		|| !actor->ValidTarget(GA_NO_DEAD)) {
 		return true;
 	}
 
@@ -973,7 +970,7 @@ void Map::DrawPile(Region screen, int pileidx)
 	if (c->Highlight) {
 		c->DrawPile(true, screen, tint);
 	} else {
-		if (c->outline->BBox.InsideRegion(vp)) {
+		if (c->outline->BBox.IntersectsRegion(vp)) {
 			c->DrawPile(false, screen, tint);
 		}
 	}
@@ -1108,7 +1105,7 @@ void Map::DrawMap(Region screen)
 
 	if (Background) {
 		if (BgDuration<gametime) {
-			video->FreeSprite(Background);
+			Sprite2D::FreeSprite(Background);
 		} else {
 			video->BlitSprite(Background,0,0,true);
 			bgoverride = true;
@@ -1171,6 +1168,7 @@ void Map::DrawMap(Region screen)
 	while (actor || a || sca || spark || pro || pile) {
 		switch(SelectObject(actor,q,a,sca,spark,pro,pile)) {
 		case AOT_ACTOR:
+			assert(actor != NULL);
 			actor->Draw( screen );
 			actor->UpdateAnimations();
 			actor = GetNextActor(q, index);
@@ -1255,6 +1253,7 @@ void Map::DrawMap(Region screen)
 	int ipCount = 0;
 	while (true) {
 		//For each InfoPoint in the map
+		assert(TMap);
 		InfoPoint* ip = TMap->GetInfoPoint( ipCount++ );
 		if (!ip)
 			break;
@@ -1438,7 +1437,7 @@ void Map::ActorSpottedByPlayer(Actor *actor)
 
 	if (!(actor->GetInternalFlag()&IF_STOPATTACK) && !core->GetGame()->AnyPCInCombat()) {
 		if (actor->Modified[IE_EA] > EA_EVILCUTOFF && !(actor->GetInternalFlag() & IF_TRIGGER_AP)) {
-			actor->SetInternalFlag(IF_TRIGGER_AP, BM_OR);
+			actor->SetInternalFlag(IF_TRIGGER_AP, OP_OR);
 			core->Autopause(AP_ENEMY, actor);
 		}
 	}
@@ -1525,6 +1524,32 @@ void Map::DeleteActor(int i)
 	}
 	//remove the actor from the area's actor list
 	actors.erase( actors.begin()+i );
+}
+
+Scriptable *Map::GetScriptableByGlobalID(ieDword objectID)
+{
+	if (!objectID) return NULL;
+	
+	Scriptable *scr = GetActorByGlobalID(objectID);
+	if (scr)
+		return scr;
+
+	scr = GetInfoPointByGlobalID(objectID);
+	if (scr)
+		return scr;
+
+	scr = GetContainerByGlobalID(objectID);
+	if (scr)
+		return scr;
+
+	scr = GetDoorByGlobalID(objectID);
+	if (scr)
+		return scr;
+
+	if (GetGlobalID() == objectID)
+		scr = this;
+
+	return scr;
 }
 
 Door *Map::GetDoorByGlobalID(ieDword objectID)
@@ -1788,7 +1813,7 @@ Actor* Map::GetActor(int index, bool any)
 	return NULL;
 }
 
-Actor* Map::GetActorByDialog(const char *resref)
+Scriptable* Map::GetActorByDialog(const char *resref)
 {
 	size_t i = actors.size();
 	while (i--) {
@@ -1798,6 +1823,70 @@ Actor* Map::GetActorByDialog(const char *resref)
 		if (strnicmp( actor->GetDialog(GD_NORMAL), resref, 8 ) == 0) {
 			return actor;
 		}
+	}
+
+	if (!core->HasFeature(GF_INFOPOINT_DIALOGS)) {
+		return NULL;
+	}
+
+	// pst has plenty of talking infopoints, eg. in ar0508 (Lothar's cabinet)
+	i = TMap->GetInfoPointCount();
+	while (i--) {
+		InfoPoint* ip = TMap->GetInfoPoint(i);
+		if (strnicmp(ip->GetDialog(), resref, 8) == 0) {
+			return ip;
+		}
+	}
+
+	// move higher if someone needs talking doors
+	i = TMap->GetDoorCount();
+	while (i--) {
+		Door* door = TMap->GetDoor(i);
+		if (strnicmp(door->GetDialog(), resref, 8) == 0) {
+			return door;
+		}
+	}
+	return NULL;
+}
+
+// NOTE: this function is not as general as it sounds
+// currently only looks at the party, since it is enough for the only known user
+// relies on an override item we create, with the resref matching the dialog one!
+// currently only handles dmhead, since no other users have been found yet (to avoid checking whole inventory)
+Scriptable* Map::GetItemByDialog(ieResRef resref)
+{
+	Game *game = core->GetGame();
+	ieResRef itemref;
+	// choose the owner of the dialog via passed dialog ref
+	if (strnicmp(resref, "dmhead", 8)) {
+		Log(WARNING, "Map", "Encountered new candidate item for GetItemByDialog? %s", resref);
+		return NULL;
+	}
+	CopyResRef(itemref, "mertwyn");
+
+	int i = game->GetPartySize(true);
+	while (i--) {
+		Actor *pc = game->GetPC(i, true);
+		int slot = pc->inventory.FindItem(itemref, 0);
+		if (slot == -1) continue;
+		CREItem *citem = pc->inventory.GetSlotItem(slot);
+		if (!citem) continue;
+		Item *item = gamedata->GetItem(citem->ItemResRef);
+		if (!item) continue;
+		if (strnicmp(item->Dialog, resref, 8)) continue;
+
+		// finally, spawn (dmhead.cre) from our override as a substitute talker
+		// the cre file is set up to be invisible, invincible and immune to several things
+		Actor *surrogate = gamedata->GetCreature(resref);
+		if (!surrogate) {
+			error("Map", "GetItemByDialog found the right item, but creature is missing: %s!", resref);
+			// error is fatal
+		}
+		Map *map = pc->GetCurrentArea();
+		map->AddActor(surrogate, true);
+		surrogate->SetPosition(pc->Pos, 0);
+
+		return surrogate;
 	}
 	return NULL;
 }
@@ -2168,7 +2257,7 @@ AreaAnimation* Map::GetAnimation(const char* Name)
 	for(iter=animations.begin();iter!=animations.end();iter++) {
 		AreaAnimation *anim = *iter;
 
-		if (anim->Name && (strnicmp( anim->Name, Name, 32 ) == 0)) {
+		if (anim->Name[0] && (strnicmp(anim->Name, Name, 32) == 0)) {
 			return anim;
 		}
 	}
@@ -2292,7 +2381,7 @@ void Map::dump(bool show_actors) const
 		i = actors.size();
 		while (i--) {
 			if (!(actors[i]->GetInternalFlag()&(IF_JUSTDIED|IF_REALLYDIED))) {
-				buffer.appendFormatted("Actor: %s at %d.%d\n", actors[i]->GetName(1), actors[i]->Pos.x, actors[i]->Pos.y);
+				buffer.appendFormatted("Actor: %s (%d) at %d.%d\n", actors[i]->GetName(1), actors[i]->GetGlobalID(), actors[i]->Pos.x, actors[i]->Pos.y);
 			}
 		}
 	}
@@ -3021,36 +3110,40 @@ void Map::SetupAmbients()
 }
 //--------mapnotes----------------
 //text must be a pointer we can claim ownership of
-void Map::AddMapNote(const Point &point, int color, char *text, ieStrRef strref)
+void Map::AddMapNote(const Point &point, int color, String* text)
 {
-	MapNote *mn = new MapNote;
+	AddMapNote(point, MapNote(text, color));
+}
 
-	mn->strref = strref;
-	mn->Pos = point;
-	mn->color = (ieWord) color;
-	mn->text = text;
-	RemoveMapNote(point); //delete previous mapnote
-	mapnotes.push_back(mn);
+void Map::AddMapNote(const Point &point, int color, ieStrRef strref)
+{
+	AddMapNote(point, MapNote(strref, color));
+}
+
+void Map::AddMapNote(const Point &point, const MapNote& note)
+{
+	RemoveMapNote(point);
+	mapnotes.push_back(note);
+	mapnotes.back().Pos = point;
 }
 
 void Map::RemoveMapNote(const Point &point)
 {
-	size_t i = mapnotes.size();
-	while (i--) {
-		if ((point.x==mapnotes[i]->Pos.x) &&
-			(point.y==mapnotes[i]->Pos.y)) {
-			delete mapnotes[i];
-			mapnotes.erase(mapnotes.begin()+i);
+	std::vector<MapNote>::iterator it = mapnotes.begin();
+	for (; it != mapnotes.end(); ++it) {
+		if ((*it).Pos == point) {
+			mapnotes.erase(it);
+			break;
 		}
 	}
 }
 
-MapNote *Map::GetMapNote(const Point &point)
+const MapNote* Map::MapNoteAtPoint(const Point &point)
 {
 	size_t i = mapnotes.size();
 	while (i--) {
-		if (Distance(point, mapnotes[i]->Pos) < 10 ) {
-			return mapnotes[i];
+		if (Distance(point, mapnotes[i].Pos) < 10 ) {
+			return &mapnotes[i];
 		}
 	}
 	return NULL;
@@ -3059,7 +3152,12 @@ MapNote *Map::GetMapNote(const Point &point)
 void Map::LoadIniSpawn()
 {
 	INISpawn = new IniSpawn(this);
-	INISpawn->InitSpawn(WEDResRef);
+	if (core->HasFeature(GF_RESDATA_INI)) {
+		// 85 cases where we'd miss the ini and 1 where we'd use the wrong one
+		INISpawn->InitSpawn(scriptName);
+	} else {
+		INISpawn->InitSpawn(WEDResRef);
+	}
 }
 
 bool Map::SpawnCreature(const Point &pos, const char *creResRef, int radiusx, int radiusy, int *difficulty, unsigned int *creCount)
@@ -3343,7 +3441,6 @@ void Map::BlockSearchMap(const Point &Pos, unsigned int size, unsigned int value
 	unsigned int ppx = Pos.x/16;
 	unsigned int ppy = Pos.y/12;
 	unsigned int r=(size-1)*(size-1)+1;
-	if (size == 1) r = 0;
 	for (unsigned int i=0; i<size; i++) {
 		for (unsigned int j=0; j<size; j++) {
 			if (i*i+j*j <= r) {
@@ -3704,7 +3801,7 @@ bool Map::DisplayTrackString(Actor *target)
 		return true;
 	}
 	if (trackFlag) {
-			char * str = core->GetString( trackString);
+			char * str = core->GetCString( trackString);
 			core->GetTokenDictionary()->SetAt( "CREATURE", str);
 			displaymsg->DisplayConstantStringName(STR_TRACKING, DMC_LIGHTGREY, target);
 			return false;
@@ -3735,6 +3832,12 @@ AreaAnimation::AreaAnimation()
 	animcount=0;
 	palette=NULL;
 	covers=NULL;
+	appearance = sequence = frame = transparency = height = 0;
+	Flags = startFrameRange = skipcycle = startchance = 0;
+	unknown48 = 0;
+	Name[0] = 0;
+	BAM[0] = 0;
+	PaletteRef[0] = 0;
 }
 
 AreaAnimation::~AreaAnimation()
@@ -3766,7 +3869,7 @@ Animation *AreaAnimation::GetAnimationPiece(AnimationFactory *af, int animCycle)
 	//this will make the animation stop when the game is stopped
 	//a possible gemrb feature to have this flag settable in .are
 	anim->gameAnimation = true;
-	anim->pos = frame;
+	anim->SetPos(frame); // sanity check it first
 	anim->Flags = Flags;
 	anim->x = Pos.x;
 	anim->y = Pos.y;
@@ -3794,9 +3897,8 @@ void AreaAnimation::InitAnimation()
 	}
 	free(animation);
 
-	if (Flags & A_ANI_ALLCYCLES) {
-		animcount = (int) af->GetCycleCount();
-
+	animcount = (int) af->GetCycleCount();
+	if (Flags & A_ANI_ALLCYCLES && animcount > 0) {
 		animation = (Animation **) malloc(animcount * sizeof(Animation *) );
 		for(int j=0;j<animcount;j++) {
 			animation[j]=GetAnimationPiece(af, j);
@@ -3849,11 +3951,7 @@ bool AreaAnimation::Schedule(ieDword gametime) const
 	}
 
 	//check for schedule
-	ieDword bit = 1<<((gametime/AI_UPDATE_TIME)%7200/300);
-	if (appearance & bit) {
-		return true;
-	}
-	return false;
+	return GemRB::Schedule(appearance, gametime);
 }
 
 int AreaAnimation::GetHeight() const
@@ -3972,12 +4070,10 @@ void Map::SetInternalSearchMap(int x, int y, int value)
 
 void Map::SetBackground(const ieResRef &bgResRef, ieDword duration)
 {
-	Video* video = core->GetVideoDriver();
-
 	ResourceHolder<ImageMgr> bmp(bgResRef);
 
 	if (Background) {
-		video->FreeSprite(Background);
+		Sprite2D::FreeSprite(Background);
 	}
 	Background = bmp->GetSprite2D();
 	BgDuration = duration;

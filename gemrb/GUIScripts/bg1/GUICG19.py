@@ -41,14 +41,13 @@ def OnLoad():
 	CharSoundWindow=GemRB.LoadWindow(19)
 
 	VoiceList = CharSoundWindow.GetControl (45)
-	VoiceList.SetFlags (IE_GUI_TEXTAREA_SELECTABLE)
+	RowCount = VoiceList.ListResources (CHR_SOUNDS)
 	if GemRB.GetVar ("Gender")==1:
 		GemRB.SetVar ("Selected", 3) #first male sound
 	else:
 		GemRB.SetVar ("Selected", 0)
 
 	VoiceList.SetVarAssoc ("Selected", 0)
-	RowCount=VoiceList.GetCharSounds()
 
 	PlayButton = CharSoundWindow.GetControl (47)
 	PlayButton.SetState (IE_GUI_BUTTON_ENABLED)
@@ -64,7 +63,7 @@ def OnLoad():
 	DoneButton.SetText(11973)
 	DoneButton.SetFlags(IE_GUI_BUTTON_DEFAULT,OP_OR)
 
-	VoiceList.SetEvent(IE_GUI_TEXTAREA_ON_CHANGE, ChangeVoice)
+	VoiceList.SetEvent(IE_GUI_TEXTAREA_ON_SELECT, ChangeVoice)
 	DoneButton.SetEvent(IE_GUI_BUTTON_ON_PRESS, NextPress)
 	BackButton.SetEvent(IE_GUI_BUTTON_ON_PRESS, CharGenCommon.BackPress)
 	CharSoundWindow.ShowModal(MODAL_SHADOW_NONE)

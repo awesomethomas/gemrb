@@ -19,6 +19,7 @@
 
 #include "Scriptable/InfoPoint.h"
 
+#include "voodooconst.h"
 #include "win32def.h"
 #include "strrefs.h"
 #include "ie_cursors.h"
@@ -28,6 +29,7 @@
 #include "TileMap.h"
 #include "GameScript/GSUtils.h"
 #include "GUI/GameControl.h"
+#include "GUI/TextSystem/TextContainer.h"
 #include "System/StringBuffer.h"
 
 namespace GemRB {
@@ -91,8 +93,10 @@ int InfoPoint::CheckTravel(Actor *actor)
 		if (!pm && (Flags&_TRAVEL_NONPC) ) return CT_CANTMOVE;
 	}
 
-	if (pm && (Flags&TRAVEL_PARTY) ) {
-		if (core->HasFeature(GF_TEAM_MOVEMENT) || core->GetGame()->EveryoneNearPoint(actor->GetCurrentArea(), actor->Pos, ENP_CANMOVE) ) {
+	// pst doesn't care about distance, selection or the party bit at all
+	static const bool teamMove = core->HasFeature(GF_TEAM_MOVEMENT);
+	if (pm && ((Flags&TRAVEL_PARTY) || teamMove)) {
+		if (teamMove || core->GetGame()->EveryoneNearPoint(actor->GetCurrentArea(), actor->Pos, ENP_CANMOVE) ) {
 			return CT_WHOLE;
 		}
 		return CT_GO_CLOSER;
@@ -238,6 +242,8 @@ void InfoPoint::dump() const
 	}
 	buffer.appendFormatted( "Region Global ID: %d\n", GetGlobalID());
 	buffer.appendFormatted( "Position: %d.%d\n", Pos.x, Pos.y);
+	buffer.appendFormatted( "TalkPos: %d.%d\n", TalkPos.x, TalkPos.y);
+	buffer.appendFormatted( "UsePoint: %d.%d  (on: %s)\n", UsePoint.x, UsePoint.y, YESNO(GetUsePoint()));
 	switch(Type) {
 	case ST_TRAVEL:
 		buffer.appendFormatted( "Destination Area: %s Entrance: %s\n", Destination, EntranceName);
@@ -248,7 +254,7 @@ void InfoPoint::dump() const
 			TrapRemovalDiff );
 		break;
 	case ST_TRIGGER:
-		buffer.appendFormatted ( "InfoString: %s\n", overHeadText );
+		buffer.appendFormatted ( "InfoString: %ls\n", OverheadText.c_str() );
 		break;
 	default:;
 	}

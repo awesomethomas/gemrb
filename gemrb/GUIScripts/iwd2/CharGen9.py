@@ -24,6 +24,7 @@ import GUICommon
 import CommonTables
 import CharOverview
 import LUCommon
+import IDLUCommon
 
 BioWindow = 0
 BioData = 0
@@ -49,24 +50,12 @@ def SetRaceAbilities(MyChar, racetitle):
 	for i in range(rows):
 		resource = ability.GetValue (i, 0)
 		count = ability.GetValue (i,1)
-		for j in range(count):
-			GemRB.LearnSpell (MyChar, resource)
+		# luckily they're all level 1
+		import Spellbook
+		Spellbook.LearnSpell (MyChar, resource, IE_IWD2_SPELL_INNATE, 0, count)
 	return
 
-def SetRaceResistances(MyChar, racetitle):
-	resistances = GemRB.LoadTable ("racersmd")
-	GemRB.SetPlayerStat (MyChar, IE_RESISTFIRE, resistances.GetValue ( racetitle, "FIRE") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTCOLD, resistances.GetValue ( racetitle, "COLD") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTELECTRICITY, resistances.GetValue ( racetitle, "ELEC") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTACID, resistances.GetValue ( racetitle, "ACID") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTMAGIC, resistances.GetValue ( racetitle, "SPELL") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTMAGICFIRE, resistances.GetValue ( racetitle, "MAGIC_FIRE") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTMAGICCOLD, resistances.GetValue ( racetitle, "MAGIC_COLD") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTSLASHING, resistances.GetValue ( racetitle, "SLASHING") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTCRUSHING, resistances.GetValue ( racetitle, "BLUDGEONING") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTPIERCING, resistances.GetValue ( racetitle, "PIERCING") )
-	GemRB.SetPlayerStat (MyChar, IE_RESISTMISSILE, resistances.GetValue ( racetitle, "MISSILE") )
-
+def SetRaceBonuses(MyChar, racetitle):
 	resistances = GemRB.LoadTable ("raceflag")
 
 	#set infravision and nondetection
@@ -89,8 +78,8 @@ def ClearPress():
 def RevertPress():
 	global BioStrRef
 	BioTable = GemRB.LoadTable ("bios")
-	Class = GemRB.GetVar ("BaseClass")
-	BioStrRef = BioTable.GetValue(Class,1)
+	ClassName = GUICommon.GetClassRowName (GemRB.GetVar ("BaseClass")-1, "index")
+	BioStrRef = BioTable.GetValue (ClassName, "BIO")
 	GemRB.SetToken ("BIO", GemRB.GetString(BioStrRef) )
 	if type (EditControl) != type (7350): # just some int
 		EditControl.SetText (GemRB.GetToken("BIO") )
@@ -103,6 +92,7 @@ def BioCancelPress():
 	return
 
 def BioDonePress():
+	GemRB.SetToken ("BIO", EditControl.QueryText())
 	if BioWindow:
 		BioWindow.Unload ()
 	return
@@ -135,35 +125,38 @@ def BioPress():
 	else:
 		EditControl.SetText (BioData )
 	Window.ShowModal (MODAL_SHADOW_GRAY)
+	EditControl.SetStatus (IE_GUI_CONTROL_FOCUSED)
 	return
 
 def NextPress():
 	#set my character up
 	MyChar = GemRB.GetVar ("Slot")
-	GemRB.SetPlayerStat (MyChar, IE_SEX, GemRB.GetVar ("Gender") )
-	GemRB.SetPlayerStat (MyChar, IE_RACE, GemRB.GetVar ("BaseRace") )
-	race = GemRB.GetVar ("Race")
-	GemRB.SetPlayerStat (MyChar, IE_SUBRACE, race & 255 )
-	row = CommonTables.Races.FindValue (3, race )
-	racename = CommonTables.Races.GetRowName (row)
-	if row!=-1:
-		SetRaceResistances( MyChar, racename )
-		SetRaceAbilities( MyChar, racename )
+
+	racename = CommonTables.Races.GetRowName (IDLUCommon.GetRace (MyChar))
 
 	#base class
 	Class=GemRB.GetVar ("BaseClass")
-	GemRB.SetPlayerStat (MyChar, IE_CLASS, Class)
+	BaseClassName = CommonTables.Classes.GetRowName (Class-1)
 	#kit
 	kitrow = GemRB.GetVar ("Class")-1
-	kit = CommonTables.Classes.GetValue(kitrow, 2)
-	GemRB.SetPlayerStat (MyChar, IE_KIT, kit )
 	if (CommonTables.Classes.GetValue(kitrow, 3) == 0):
 		#baseclass
-		clssname = CommonTables.Classes.GetRowName (Class-1)
+		clssname = BaseClassName
 	else:
 		#kit
 		clssname = CommonTables.Classes.GetRowName (kitrow)
-	LUCommon.SetClassResistances( MyChar, clssname )
+	IDLUCommon.AddResistances (MyChar, clssname, "clssrsmd")
+
+	IDLUCommon.AddResistances (MyChar, racename, "racersmd")
+	SetRaceBonuses(MyChar, racename)
+	SetRaceAbilities (MyChar, racename)
+
+	# setup saving throws
+	IDLUCommon.SetupSavingThrows (MyChar, Class, True)
+
+	# 10 is a weapon slot (see slottype.2da row 10)
+	GemRB.CreateItem (MyChar, "00staf01", 10, 1, 0, 0)
+	GemRB.SetEquippedQuickSlot (MyChar, 0)
 
 	# reset hitpoints
 	GemRB.SetPlayerStat (MyChar, IE_MAXHITPOINTS, 0, 0)
@@ -201,12 +194,7 @@ def NextPress():
 	GemRB.SetPlayerStat (MyChar, IE_EA, 2 )
 	GemRB.SetPlayerName (MyChar, GemRB.GetToken ("CHARNAME"), 0)
 
-	#setting feats
-	TmpTable = GemRB.LoadTable ("featreq")
-	FeatCount = TmpTable.GetRowCount ()
-	ProfOffset = IE_PROFICIENCYBASTARDSWORD
-	for i in range (FeatCount):
-		GemRB.SetFeat (MyChar, i, GemRB.GetVar ("Feat "+str(i) ) )
+	# feats are set already in the Feats step
 
 	#does all the rest
 	LargePortrait = GemRB.GetToken ("LargePortrait")
@@ -214,9 +202,15 @@ def NextPress():
 	GemRB.FillPlayerInfo (MyChar, LargePortrait, SmallPortrait)
 	GemRB.SetNextScript ("SPPartyFormation")
 
-	TmpTable = GemRB.LoadTable ("strtxp")
+	# apply class/kit abilities
+	# reset levels, so pcf_level can apply any clabs
+	# this way we don't need to port GUICommon.ResolveClassAbilities, as core does everything
+	Levels = IDLUCommon.Levels
+	GemRB.SetPlayerStat (MyChar, Levels[Class-1], 0, 0)
+	GemRB.SetPlayerStat (MyChar, Levels[Class-1], 1)
 
 	#starting xp is race dependent
+	TmpTable = GemRB.LoadTable ("strtxp")
 	xp = TmpTable.GetValue (racename, "VALUE")
 	GemRB.SetPlayerStat (MyChar, IE_XP, xp )
 
@@ -227,5 +221,9 @@ def NextPress():
 		NewRef = GemRB.CreateString (62015+MyChar, BioData)
 	GemRB.SetPlayerString (MyChar, 63, NewRef)
 
-	LUCommon.ApplyFeats(MyChar)
+	# set memorized spells as non-depleted - ready to use
+	GemRB.ChargeSpells (MyChar)
+
+	# core will call this for us on area load, so no need to repeat
+	#LUCommon.ApplyFeats(MyChar)
 	return

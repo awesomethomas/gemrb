@@ -22,6 +22,7 @@
 #include "opcode_params.h"
 #include "overlays.h"
 #include "strrefs.h"
+#include "voodooconst.h"
 #include "win32def.h"
 
 #include "Audio.h"
@@ -54,6 +55,7 @@ using namespace GemRB;
 #define PI_CONFUSED  3
 #define PI_BERSERK   4
 #define PI_POISONED  6
+#define PI_DISEASED  7
 #define PI_BLIND     8
 #define PI_HELD     13
 #define PI_SLEEP    14
@@ -88,13 +90,11 @@ using namespace GemRB;
 static ieResRef *casting_glows = NULL;
 static int cgcount = -1;
 static ieResRef *spell_hits = NULL;
-static ieDword enhanced_effects = 0;
 static int shcount = -1;
 static int *spell_abilities = NULL;
 static ieDword splabcount = 0;
 static int *polymorph_stats = NULL;
 static int polystatcount = 0;
-static ieDword pstflags = false;
 
 //the original engine stores the colors in sprklclr.2da in a different order
 
@@ -425,6 +425,7 @@ int fx_avatar_removal_modifier (Scriptable* Owner, Actor* target, Effect* fx);//
 int fx_magical_rest (Scriptable* Owner, Actor* target, Effect* fx);//13c
 //int fx_improved_haste_state (Scriptable* Owner, Actor* target, Effect* fx);//13d same as haste
 int fx_change_weather (Scriptable* Owner, Actor* target, Effect* fx);//13e ChangeWeather
+int fx_set_concealment (Scriptable* Owner, Actor* target, Effect* fx);
 
 int fx_unknown (Scriptable* Owner, Actor* target, Effect* fx);//???
 
@@ -594,7 +595,7 @@ static EffectDesc effectnames[] = {
 	{ "LevelModifier", fx_level_modifier, 0, -1 },
 	{ "LevelDrainModifier", fx_leveldrain_modifier, 0, -1 },
 	{ "LoreModifier", fx_lore_modifier, 0, -1 },
-	{ "LuckModifier", fx_luck_modifier, 0, -1 },
+	{ "LuckModifier", fx_luck_modifier, EFFECT_NO_LEVEL_CHECK, -1 },
 	{ "LuckCumulative", fx_luck_cumulative, 0, -1 },
 	{ "LuckNonCumulative", fx_luck_non_cumulative, 0, -1 },
 	{ "MagicalColdResistanceModifier", fx_magical_cold_resistance_modifier, 0, -1 },
@@ -640,7 +641,7 @@ static EffectDesc effectnames[] = {
 	{ "PiercingResistanceModifier", fx_piercing_resistance_modifier, 0, -1 },
 	{ "PlayMovie", fx_play_movie, EFFECT_NO_ACTOR, -1 },
 	{ "PlaySound", fx_playsound, EFFECT_NO_ACTOR, -1 },
-	{ "PlayVisualEffect", fx_play_visual_effect, 0, -1 },
+	{ "PlayVisualEffect", fx_play_visual_effect, EFFECT_REINIT_ON_LOAD, -1 },
 	{ "PoisonResistanceModifier", fx_poison_resistance_modifier, 0, -1 },
 	{ "Polymorph", fx_polymorph, 0, -1 },
 	{ "PortraitChange", fx_portrait_change, 0, -1 },
@@ -692,10 +693,11 @@ static EffectDesc effectnames[] = {
 	{ "SaveVsWandsModifier", fx_save_vs_wands_modifier, 0, -1 },
 	{ "ScreenShake", fx_screenshake, EFFECT_NO_ACTOR, -1 },
 	{ "ScriptingState", fx_scripting_state, 0, -1 },
-	{ "Sequencer:Activate", fx_activate_spell_sequencer, 0, -1 },
+	{ "Sequencer:Activate", fx_activate_spell_sequencer, EFFECT_PRESET_TARGET, -1 },
 	{ "Sequencer:Create", fx_create_spell_sequencer, 0, -1 },
 	{ "Sequencer:Store", fx_store_spell_sequencer, 0, -1 },
 	{ "SetAIScript", fx_set_ai_script, 0, -1 },
+	{ "SetConcealment", fx_set_concealment, 0, -1 },
 	{ "SetMapNote", fx_set_map_note, EFFECT_NO_ACTOR, -1 },
 	{ "SetMeleeEffect", fx_generic_effect, 0, -1 },
 	{ "SetRangedEffect", fx_generic_effect, 0, -1 },
@@ -842,8 +844,6 @@ static void Cleanup()
 static void RegisterCoreOpcodes()
 {
 	core->RegisterOpcodes( sizeof( effectnames ) / sizeof( EffectDesc ) - 1, effectnames );
-	enhanced_effects=core->HasFeature(GF_ENHANCED_EFFECTS);
-	pstflags=core->HasFeature(GF_PST_STATE_FLAGS);
 	default_spell_hit.SequenceFlags|=IE_VVC_BAM;
 }
 
@@ -1101,7 +1101,7 @@ int fx_set_charmed_state (Scriptable* Owner, Actor* target, Effect* fx)
 		if (caster->Type==ST_ACTOR) {
 			casterenemy = ((Actor *) caster)->GetStat(IE_EA)>EA_GOODCUTOFF; //or evilcutoff?
 		} else {
-			casterenemy = target->GetStat(IE_EA)>EA_GOODCUTOFF;
+			casterenemy = true; //target->GetStat(IE_EA)>EA_GOODCUTOFF;
 		}
 		fx->DiceThrown=casterenemy;
 
@@ -1179,6 +1179,10 @@ int fx_charisma_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_charisma_modifier(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 
+	// in pst (only) this is a diced effect (eg. Friends)
+	if (fx->FirstApply == 1 && fx->Parameter1 == 0 && fx->Parameter2 == 0) {
+		fx->Parameter1 = DICE_ROLL(0);
+	}
 	if (fx->TimingMode==FX_DURATION_INSTANT_PERMANENT) {
 		BASE_MOD( IE_CHR );
 	} else {
@@ -1294,6 +1298,11 @@ int fx_damage (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 			Log(ERROR, "Actor", "LastHitter (type %d) falling back to target: %s.", caster ? caster->Type : -1, target->GetName(1));
 			target->LastHitter=target->GetGlobalID();
 		}
+	}
+
+	if (target->GetStat(IE_MC_FLAGS) & MC_INVULNERABLE) {
+		Log(DEBUG, "fx_damage", "Attacking invulnerable target, skipping!");
+		return FX_NOT_APPLIED;
 	}
 
 	target->Damage(fx->Parameter1, damagetype, caster, modtype, fx->IsVariable, fx->SavingThrowType);
@@ -1618,7 +1627,7 @@ int fx_set_invisible_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	switch (fx->Parameter2) {
 	case 0:
-		if (pstflags) {
+		if (core->HasFeature(GF_PST_STATE_FLAGS)) {
 			STATE_SET( STATE_PST_INVIS );
 		} else {
 			STATE_SET( STATE_INVISIBLE );
@@ -1681,6 +1690,11 @@ int fx_luck_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_luck_modifier(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 
+	// in pst (only) this is a diced effect (eg. Luck)
+	if (fx->FirstApply == 1 && fx->Parameter1 == 0 && fx->Parameter2 == 0) {
+		fx->Parameter1 = DICE_ROLL(0);
+	}
+
 	if (fx->TimingMode==FX_DURATION_INSTANT_PERMANENT) {
 		BASE_MOD( IE_LUCK );
 	} else {
@@ -1715,7 +1729,7 @@ int fx_set_panic_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	} else {
 		STATE_SET( STATE_PANIC );
 	}
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_PANIC);
 	}
 	return FX_PERMANENT;
@@ -1827,7 +1841,7 @@ int fx_remove_curse (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 				if (!(inv->GetItemFlag(i)&IE_INV_ITEM_CURSED)) {
 					continue;
 				}
-				inv->ChangeItemFlag(i, IE_INV_ITEM_CURSED, BM_NAND);
+				inv->ChangeItemFlag(i, IE_INV_ITEM_CURSED, OP_NAND);
 				if (inv->UnEquipItem(i,true)) {
 					CREItem *tmp = inv->RemoveItem(i);
 					if(inv->AddSlotItem(tmp,-3)!=ASI_SUCCESS) {
@@ -1989,12 +2003,7 @@ int fx_set_unconscious_state (Scriptable* Owner, Actor* target, Effect* fx)
 	}
 
 	if (fx->FirstApply) {
-		Effect *newfx;
-
-		newfx = EffectQueue::CreateEffectCopy(fx, fx_animation_stance_ref, 0, IE_ANI_SLEEP);
-		core->ApplyEffect(newfx, target, Owner);
-
-		delete newfx;
+		target->ApplyEffectCopy(fx, fx_animation_stance_ref, Owner, 0, IE_ANI_SLEEP);
 	}
 
 	if (fx->TimingMode==FX_DURATION_INSTANT_PERMANENT) {
@@ -2184,7 +2193,7 @@ int fx_cure_invisible_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_cure_invisible_state(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 	if (!STATE_GET(STATE_NONDET)) {
-		if (pstflags) {
+		if (core->HasFeature(GF_PST_STATE_FLAGS)) {
 			BASE_STATE_CURE( STATE_PST_INVIS );
 		} else {
 			BASE_STATE_CURE( STATE_INVISIBLE | STATE_INVIS2 );
@@ -2266,11 +2275,11 @@ int fx_animation_id_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		return FX_APPLIED;
 	case 1: //remove any non permanent change
 		target->fxqueue.RemoveAllEffects(fx_animation_id_modifier_ref);
-		//return FX_NOT_APPLIED;
-		//intentionally passing through (perma change removes previous changes)
+		return FX_NOT_APPLIED;
 	case 2: //permanent animation id change
-		//FIXME: Why no PCF here? (Avenger)
-		target->SetBaseNoPCF(IE_ANIMATION_ID, fx->Parameter1);
+		// also removes previous changes
+		target->SetBase(IE_ANIMATION_ID, fx->Parameter1);
+		target->fxqueue.RemoveAllEffects(fx_animation_id_modifier_ref);
 		return FX_NOT_APPLIED;
 	}
 }
@@ -2498,7 +2507,7 @@ int fx_set_blur_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		STATE_SET( STATE_BLUR );
 	}
 	//iwd2 specific
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_BLUR);
 	}
 	return FX_PERMANENT;
@@ -2631,59 +2640,36 @@ int fx_sex_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 int fx_ids_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_ids_modifier(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
-	bool permanent = fx->TimingMode==FX_DURATION_INSTANT_PERMANENT;
+	ieDword stat = 0;
 	switch (fx->Parameter2) {
 	case 0:
-		if (permanent) {
-			BASE_SET(IE_EA, fx->Parameter1);
-		} else {
-			STAT_SET(IE_EA, fx->Parameter1);
-		}
+		stat = IE_EA;
 		break;
 	case 1:
-		if (permanent) {
-			BASE_SET(IE_GENERAL, fx->Parameter1);
-		} else {
-			STAT_SET(IE_GENERAL, fx->Parameter1);
-		}
+		stat = IE_GENERAL;
 		break;
 	case 2:
-		if (permanent) {
-			BASE_SET(IE_RACE, fx->Parameter1);
-		} else {
-			STAT_SET(IE_RACE, fx->Parameter1);
-		}
+		stat = IE_RACE;
 		break;
 	case 3:
-		if (permanent) {
-			BASE_SET(IE_CLASS, fx->Parameter1);
-		} else {
-			STAT_SET(IE_CLASS, fx->Parameter1);
-		}
+		stat = IE_CLASS;
 		break;
 	case 4:
-		if (permanent) {
-			BASE_SET(IE_SPECIFIC, fx->Parameter1);
-		} else {
-			STAT_SET(IE_SPECIFIC, fx->Parameter1);
-		}
+		stat = IE_SPECIFIC;
 		break;
 	case 5:
-		if (permanent) {
-			BASE_SET(IE_SEX, fx->Parameter1);
-		} else {
-			STAT_SET(IE_SPECIFIC, fx->Parameter1);
-		}
+		stat = IE_SEX;
 		break;
 	case 6:
-		if (permanent) {
-			BASE_SET(IE_ALIGNMENT, fx->Parameter1);
-		} else {
-			STAT_SET(IE_ALIGNMENT, fx->Parameter1);
-		}
+		stat = IE_ALIGNMENT;
 		break;
 	default:
 		return FX_NOT_APPLIED;
+	}
+	if (fx->TimingMode == FX_DURATION_INSTANT_PERMANENT) {
+		BASE_SET(stat, fx->Parameter1);
+	} else {
+		STAT_SET(stat, fx->Parameter1);
 	}
 	return FX_PERMANENT;
 }
@@ -2718,23 +2704,27 @@ int fx_set_blind_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	}
 
 	//don't do this effect twice (bug exists in BG2, but fixed in IWD2)
+	static bool reverse = core->HasFeature(GF_REVERSE_TOHIT);
 	if (!STATE_GET(STATE_BLIND)) {
 		STATE_SET( STATE_BLIND );
 		//the feat normally exists only in IWD2, but won't hurt
 		if (!target->GetFeat(FEAT_BLIND_FIGHT)) {
 			target->AddPortraitIcon(PI_BLIND);
-			if (core->HasFeature(GF_REVERSE_TOHIT)) {
+			if (reverse) {
 				//BG2
 				target->AC.HandleFxBonus(-4, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 				target->ToHit.HandleFxBonus(-4, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 			} else {
 				//IWD2
 				target->AC.HandleFxBonus(-2, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
-				// TODO: 50% inherent miss chance (full concealment)
-				target->AC.SetDexterityBonus(0); // no dexterity bonus to AC (caught flatfooted)
-				target->ToHit.HandleFxBonus(-5, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
+				// no dexterity bonus to AC (caught flatfooted) is handled in core
 			}
 		}
+	}
+	// this part is unaffected by blind fighting feat
+	if (!reverse) {
+		// 50% inherent miss chance (full concealment)
+		STAT_ADD(IE_ETHEREALNESS, 50<<8);
 	}
 	//this should be FX_PERMANENT, but the current code is a mess here. Review after cleaned up
 	return FX_APPLIED;
@@ -2756,7 +2746,7 @@ int fx_set_feebleminded_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if(0) print("fx_set_feebleminded_state(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 	STATE_SET( STATE_FEEBLE );
 	STAT_SET( IE_INT, 3);
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_FEEBLEMIND);
 	}
 	//This state is better off with always stored, because of the portrait icon and the int stat
@@ -2877,6 +2867,8 @@ int fx_cure_diseased_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if(0) print("fx_cure_diseased_state(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 	//STATE_CURE( STATE_DISEASED ); //the bit flagged as disease is actually the active state. so this is even more unlikely to be used as advertised
 	target->fxqueue.RemoveAllEffects( fx_diseased_state_ref ); //this is what actually happens in bg2
+	// iwd also does this, as its mummies have permanent timing diseases
+	target->fxqueue.RemoveAllEffectsWithParam(fx_display_portrait_icon_ref, PI_DISEASED);
 	return FX_NOT_APPLIED;
 }
 
@@ -2889,7 +2881,7 @@ int fx_set_deaf_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if (target->SetSpellState(SS_DEAF)) return FX_APPLIED;
 
 	EXTSTATE_SET(EXTSTATE_DEAF); //iwd1/how needs this
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_DEAFNESS);
 	}
 	return FX_APPLIED;
@@ -3209,7 +3201,7 @@ int fx_protection_spelllevel (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if(0) print("fx_protection_spelllevel(%2d) Level: %d", fx->Opcode, fx->Parameter1);
 
 	int value = fx->Parameter1;
-	if (value<9) {
+	if (value <= 9) {
 		STAT_BIT_OR(IE_MINORGLOBE, 1<<value);
 		STAT_BIT_OR(IE_IMMUNITY, IMM_LEVEL);
 		return FX_APPLIED;
@@ -3230,8 +3222,6 @@ int fx_change_name (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 int fx_experience_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_experience_modifier(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
-	//FIXME: this has mode too
-	//target->AddExperience (fx->Parameter1);
 	STAT_MOD( IE_XP );
 	return FX_NOT_APPLIED;
 }
@@ -3309,6 +3299,10 @@ int fx_reputation_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 int fx_turn_undead (Scriptable* Owner, Actor* target, Effect* fx)
 {
 	if(0) print("fx_turn_undead(%2d): Level %d", fx->Opcode, fx->Parameter1);
+
+	if (target->GetStat(IE_NOTURNABLE)) {
+		return FX_NOT_APPLIED;
+	}
 	if (fx->Parameter1) {
 		target->Turn(Owner, fx->Parameter1);
 	} else {
@@ -3643,7 +3637,7 @@ int fx_dimension_door (Scriptable* Owner, Actor* target, Effect* fx)
 		break;
 	case 2: //target to saved location
 		p.x=STAT_GET(IE_SAVEDXPOS);
-		p.x=STAT_GET(IE_SAVEDYPOS);
+		p.y=STAT_GET(IE_SAVEDYPOS);
 		target->SetOrientation(STAT_GET(IE_SAVEDFACE), false);
 		break;
 	case 3: //owner swapped with target
@@ -3793,7 +3787,7 @@ int fx_set_confused_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	//for permanent confusion
 	//the portrait icon cannot be made common because rigid thinking uses a different icon
 	//in bg2/how
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_CONFUSED);
 	}
 	return FX_PERMANENT;
@@ -3824,7 +3818,7 @@ int fx_set_aid_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	//bless effect too?
 	target->ToHit.HandleFxBonus(fx->Parameter1, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 	STAT_ADD( IE_DAMAGEBONUS, fx->Parameter1);
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_AID);
 		target->SetColorMod(0xff, RGBModifier::ADD, 30, 50, 50, 50);
 	}
@@ -3847,7 +3841,7 @@ int fx_set_bless_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	target->ToHit.HandleFxBonus(fx->Parameter1, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 	STAT_ADD( IE_DAMAGEBONUS, fx->Parameter1);
 	STAT_ADD( IE_MORALEBREAK, fx->Parameter1);
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_BLESS);
 		target->SetColorMod(0xff, RGBModifier::ADD, 30, 0xc0, 0x80, 0);
 	}
@@ -3879,7 +3873,7 @@ int fx_set_holy_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	STAT_ADD( IE_STR, fx->Parameter1);
 	STAT_ADD( IE_CON, fx->Parameter1);
 	STAT_ADD( IE_DEX, fx->Parameter1);
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_HOLY);
 		target->SetColorMod(0xff, RGBModifier::ADD, 30, 0x80, 0x80, 0x80);
 	}
@@ -4017,7 +4011,7 @@ int fx_force_visible (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_force_visible(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 
-	if (pstflags) {
+	if (core->HasFeature(GF_PST_STATE_FLAGS)) {
 		BASE_STATE_CURE(STATE_PST_INVIS);
 	} else {
 		BASE_STATE_CURE(STATE_INVISIBLE);
@@ -4143,12 +4137,7 @@ int fx_casting_glow (Scriptable* Owner, Actor* target, Effect* fx)
 		map->AddVVCell(new VEFObject(sca));
 	} else {
 		//simulate sparkle casting glows
-		Effect *newfx;
-
-		newfx = EffectQueue::CreateEffectCopy(fx, fx_sparkle_ref, fx->Parameter2, 3);
-		core->ApplyEffect(newfx, target, Owner);
-
-		delete newfx;
+		target->ApplyEffectCopy(fx, fx_sparkle_ref, Owner, fx->Parameter2, 3);
 	}
 
 	return FX_NOT_APPLIED;
@@ -4293,6 +4282,7 @@ int fx_disable_spellcasting (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 }
 
 //0x92 Spell:Cast
+// param2 was supposedly distinguishing between normal and instant casts, but uses in bg2 disagree
 int fx_cast_spell (Scriptable* Owner, Actor* target, Effect* fx)
 {
 	if(0) print("fx_cast_spell(%2d): Resource:%s Mode: %d", fx->Opcode, fx->Resource, fx->Parameter2);
@@ -4306,8 +4296,8 @@ int fx_cast_spell (Scriptable* Owner, Actor* target, Effect* fx)
 	// save the current spell ref, so the rest of its effects can be applied afterwards
 	ieResRef OldSpellResRef;
 	memcpy(OldSpellResRef, Owner->SpellResRef, sizeof(OldSpellResRef));
-	// flags: no deplete, instant?, no interrupt
-	Owner->DirectlyCastSpell(target, fx->Resource, fx->Parameter1, fx->Parameter2, false, fx->Parameter2==1, true);
+	// flags: no deplete, instant, no interrupt
+	Owner->DirectlyCastSpell(target, fx->Resource, fx->Parameter1, fx->Parameter2, false);
 	Owner->SetSpellResRef(OldSpellResRef);
 
 	return FX_NOT_APPLIED;
@@ -4334,7 +4324,7 @@ int fx_cast_spell_point (Scriptable* Owner, Actor* /*target*/, Effect* fx)
 	ieResRef OldSpellResRef;
 	memcpy(OldSpellResRef, Owner->SpellResRef, sizeof(OldSpellResRef));
 	Point p(fx->PosX, fx->PosY);
-	Owner->DirectlyCastSpellPoint(p, fx->Resource, fx->Parameter1, fx->Parameter2, false);
+	Owner->DirectlyCastSpellPoint(p, fx->Resource, fx->Parameter1, true, false);
 	Owner->SetSpellResRef(OldSpellResRef);
 	return FX_NOT_APPLIED;
 }
@@ -4362,7 +4352,7 @@ int fx_find_traps (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if(0) print("fx_find_traps(%2d)", fx->Opcode);
 	//reveal trapped containers, doors, triggers that are in the visible range
 	ieDword id = target->GetGlobalID();
-	ieDword range = target->GetStat(IE_VISUALRANGE)*10;
+	ieDword range = target->GetStat(IE_VISUALRANGE) * VOODOO_FINDTRAP_RANGE;
 	ieDword skill;
 	bool detecttraps = true;
 
@@ -4494,7 +4484,7 @@ int fx_set_sanctuary_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	STAT_SET_PCF( IE_SANCTUARY, fx->Parameter2);
 	//a rare event, but this effect gives more in bg2 than in iwd2
 	//so we use this flag
-	if (!enhanced_effects) {
+	if (!core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->SetLockedPalette(fullwhite);
 	}
 	return FX_APPLIED;
@@ -4583,7 +4573,7 @@ int fx_mirror_image_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if (!fx->Parameter1) {
 		return FX_NOT_APPLIED;
 	}
-	if (pstflags) {
+	if (core->HasFeature(GF_PST_STATE_FLAGS)) {
 		STATE_SET( STATE_PST_MIRROR );
 	}
 	else {
@@ -4768,6 +4758,7 @@ int fx_poison_resistance_modifier (Scriptable* /*Owner*/, Actor* target, Effect*
 {
 	if(0) print("fx_poison_resistance_modifier(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 
+	// this is a gemrb extension, the original only supported flat setting of this resistance
 	STAT_MOD( IE_RESISTPOISON );
 	return FX_APPLIED;
 }
@@ -4864,10 +4855,13 @@ int fx_apply_effect (Scriptable* Owner, Actor* target, Effect* fx)
 
 	int ret;
 	if (target) {
-		if (fx->FirstApply && fx->IsVariable) {
+		if (fx->FirstApply && (fx->IsVariable || fx->TimingMode == FX_DURATION_INSTANT_PERMANENT_AFTER_BONUSES)) {
+			// FIXME: should this happen for all effects?
 			//hack to entirely replace this effect with the applied effect, this is required for some generic effects
 			//that must be put directly in the effect queue to have any impact (to be counted by BonusAgainstCreature, etc)
+			CopyResRef(myfx->Source, fx->Source); // more?
 			target->fxqueue.AddEffect(myfx);
+			delete myfx;
 			return FX_NOT_APPLIED;
 		}
 		ret = target->fxqueue.ApplyEffect(target, myfx, fx->FirstApply, !fx->Parameter3);
@@ -5818,11 +5812,18 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 
 	if (fx->FirstApply && fx->Parameter3) {
 		// TODO: display strings
-
-		target->spellbook.HaveSpell( fx->Resource, HS_DEPLETE );
-		target->spellbook.HaveSpell( fx->Resource2, HS_DEPLETE );
-		target->spellbook.HaveSpell( fx->Resource3, HS_DEPLETE );
-		target->spellbook.HaveSpell( fx->Resource4, HS_DEPLETE );
+		if (gamedata->Exists(fx->Resource, IE_SPL_CLASS_ID)) {
+			target->spellbook.HaveSpell(fx->Resource, HS_DEPLETE);
+		}
+		if (gamedata->Exists(fx->Resource2, IE_SPL_CLASS_ID)) {
+			target->spellbook.HaveSpell(fx->Resource2, HS_DEPLETE);
+		}
+		if (gamedata->Exists(fx->Resource3, IE_SPL_CLASS_ID)) {
+			target->spellbook.HaveSpell(fx->Resource3, HS_DEPLETE);
+		}
+		if (gamedata->Exists(fx->Resource4, IE_SPL_CLASS_ID)) {
+			target->spellbook.HaveSpell(fx->Resource4, HS_DEPLETE);
+		}
 	}
 
 	if (fx->Parameter3) {
@@ -5863,7 +5864,7 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 	bool per_round = true; // 4xxx trigger?
 	const TriggerEntry *entry = NULL;
 	ieDword timeOfDay;
-	Actor *near;
+	Actor *nearest = NULL;
 
 	// check the condition
 	switch (fx->Parameter2) {
@@ -5904,13 +5905,13 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 		break;
 	case COND_NEAR4:
 		// PersonalSpaceDistance([ANYONE], 4)
-		near = GetNearestOf(map, target, ORIGIN_SEES_ENEMY);
-		condition = near && PersonalDistance(near, target) < 4;
+		nearest = GetNearestOf(map, target, ORIGIN_SEES_ENEMY);
+		condition = nearest && PersonalDistance(nearest, target) < 4;
 		break;
 	case COND_NEAR10:
 		// PersonalSpaceDistance([ANYONE], 10)
-		near = GetNearestOf(map, target, ORIGIN_SEES_ENEMY);
-		condition = near && PersonalDistance(near, target) < 10;
+		nearest = GetNearestOf(map, target, ORIGIN_SEES_ENEMY);
+		condition = nearest && PersonalDistance(nearest, target) < 10;
 		break;
 	case COND_EVERYROUND:
 		condition = true;
@@ -5949,10 +5950,10 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 		// TODO: fail remaining spells if an earlier one fails?
 		unsigned int i, dist;
 		ieResRef refs[4];
-		strncpy(refs[0], fx->Resource, sizeof(ieResRef));
-		strncpy(refs[1], fx->Resource2, sizeof(ieResRef));
-		strncpy(refs[2], fx->Resource3, sizeof(ieResRef));
-		strncpy(refs[3], fx->Resource4, sizeof(ieResRef));
+		CopyResRef(refs[0], fx->Resource);
+		CopyResRef(refs[1], fx->Resource2);
+		CopyResRef(refs[2], fx->Resource3);
+		CopyResRef(refs[3], fx->Resource4);
 		// save the current spell ref, so the rest of its effects can be applied afterwards (in case of a surge)
 		ieResRef OldSpellResRef;
 		memcpy(OldSpellResRef, Owner->SpellResRef, sizeof(OldSpellResRef));
@@ -5975,7 +5976,7 @@ int fx_cast_spell_on_condition (Scriptable* Owner, Actor* target, Effect* fx)
 			}
 			//core->ApplySpell(refs[i], actor, Owner, fx->Power);
 			// no casting animation, no deplete, instant, no interrupt
-			Owner->DirectlyCastSpell(actor, refs[i], fx->Power, 1, false, true, true);
+			Owner->DirectlyCastSpell(actor, refs[i], fx->Power, 1, false);
 		}
 		Owner->SetSpellResRef(OldSpellResRef);
 
@@ -6152,11 +6153,7 @@ int fx_puppet_master (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		core->ApplySpell(resref,copy,copy,0);
 	}
 
-	newfx = EffectQueue::CreateEffectCopy(fx, fx_puppetmarker_ref, fx->CasterID, fx->Parameter2);
-	if (newfx) {
-		core->ApplyEffect(newfx, copy, copy);
-		delete newfx;
-	}
+	copy->ApplyEffectCopy(fx, fx_puppetmarker_ref, copy, fx->CasterID, fx->Parameter2);
 	return FX_NOT_APPLIED;
 }
 
@@ -6394,7 +6391,7 @@ int fx_set_area_effect (Scriptable* Owner, Actor* target, Effect* fx)
 	// save the current spell ref, so the rest of its effects can be applied afterwards
 	ieResRef OldSpellResRef;
 	memcpy(OldSpellResRef, Owner->SpellResRef, sizeof(OldSpellResRef));
-	Owner->DirectlyCastSpellPoint(target->Pos, fx->Resource, 0, 1, false, true, true);
+	Owner->DirectlyCastSpellPoint(target->Pos, fx->Resource, 0, 1, false);
 	Owner->SetSpellResRef(OldSpellResRef);
 	return FX_NOT_APPLIED;
 }
@@ -6407,8 +6404,7 @@ int fx_set_map_note (Scriptable* Owner, Actor* target, Effect* fx)
 	Map *map = marker->GetCurrentArea();
 	if (!map) return FX_APPLIED; //delay effect
 	Point p(fx->PosX, fx->PosY);
-	char *text = core->GetString(fx->Parameter1, 0);
-	map->AddMapNote(p, fx->Parameter2, text, fx->Parameter1);
+	map->AddMapNote(p, fx->Parameter2, fx->Parameter1);
 	return FX_NOT_APPLIED;
 }
 
@@ -6449,10 +6445,18 @@ int fx_store_spell_sequencer(Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	//just display the spell sequencer portrait icon
 	target->AddPortraitIcon(PI_SEQUENCER);
 	if (fx->FirstApply && fx->Parameter3) {
-		target->spellbook.HaveSpell( fx->Resource, HS_DEPLETE );
-		target->spellbook.HaveSpell( fx->Resource2, HS_DEPLETE );
-		target->spellbook.HaveSpell( fx->Resource3, HS_DEPLETE );
-		target->spellbook.HaveSpell( fx->Resource4, HS_DEPLETE );
+		if (gamedata->Exists(fx->Resource, IE_SPL_CLASS_ID)) {
+			target->spellbook.HaveSpell(fx->Resource, HS_DEPLETE);
+		}
+		if (gamedata->Exists(fx->Resource2, IE_SPL_CLASS_ID)) {
+			target->spellbook.HaveSpell(fx->Resource2, HS_DEPLETE);
+		}
+		if (gamedata->Exists(fx->Resource3, IE_SPL_CLASS_ID)) {
+			target->spellbook.HaveSpell(fx->Resource3, HS_DEPLETE);
+		}
+		if (gamedata->Exists(fx->Resource4, IE_SPL_CLASS_ID)) {
+			target->spellbook.HaveSpell(fx->Resource4, HS_DEPLETE);
+		}
 	}
 	return FX_APPLIED;
 }
@@ -6487,15 +6491,18 @@ int fx_activate_spell_sequencer(Scriptable* Owner, Actor* target, Effect* fx)
 	}
 
 	Effect *sequencer = ((Actor *) Owner)->fxqueue.HasEffect(fx_spell_sequencer_active_ref);
-	if (sequencer) {
-		//cast 1-4 spells stored in the spell sequencer
-		core->ApplySpell(sequencer->Resource, target, Owner, fx->Power);
-		core->ApplySpell(sequencer->Resource2, target, Owner, fx->Power);
-		core->ApplySpell(sequencer->Resource3, target, Owner, fx->Power);
-		core->ApplySpell(sequencer->Resource4, target, Owner, fx->Power);
-		//remove the spell sequencer store effect
-		sequencer->TimingMode=FX_DURATION_JUST_EXPIRED;
+	if (!sequencer) {
+		return FX_NOT_APPLIED;
 	}
+
+	//cast 1-4 spells stored in the spell sequencer
+	Owner->DirectlyCastSpell(target, sequencer->Resource, fx->CasterLevel, false, false);
+	Owner->DirectlyCastSpell(target, sequencer->Resource2, fx->CasterLevel, false, false);
+	Owner->DirectlyCastSpell(target, sequencer->Resource3, fx->CasterLevel, false, false);
+	Owner->DirectlyCastSpell(target, sequencer->Resource4, fx->CasterLevel, false, false);
+
+	//remove the spell sequencer store effect
+	sequencer->TimingMode = FX_DURATION_JUST_EXPIRED;
 	return FX_NOT_APPLIED;
 }
 
@@ -6799,6 +6806,10 @@ int fx_teleport_to_target (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		Object oC;
 		oC.objectFields[0]=EA_ENEMY;
 		Targets *tgts = GetAllObjects(map, target, &oC, GA_NO_DEAD);
+		if (!tgts) {
+			// no enemy to jump to
+			return FX_NOT_APPLIED;
+		}
 		int rnd = core->Roll(1,tgts->Count(),-1);
 		Actor *victim = (Actor *) tgts->GetTarget(rnd, ST_ACTOR);
 		delete tgts;
@@ -7333,6 +7344,22 @@ int fx_change_weather (Scriptable* /*Owner*/, Actor* /*target*/, Effect* fx)
 	core->GetGame()->StartRainOrSnow(false, fx->Parameter1 & WB_TYPEMASK);
 
 	return FX_NOT_APPLIED;
+}
+
+// 458 SetConcealment
+// adds concealment/etherealness bonus (harder to hit) or malus (harder to hit for you)
+// not safe for negative values!
+int fx_set_concealment (Scriptable* /*Owner*/, Actor* target, Effect* fx)
+{
+	print("fx_set_concealment(%2d): P1: %d P2: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
+	int concealment = fx->Parameter1 & 0x64;
+	if (fx->Parameter2 == 0) {
+		STAT_ADD(IE_ETHEREALNESS, concealment);
+	} else {
+		STAT_ADD(IE_ETHEREALNESS, concealment<<8);
+	}
+
+	return FX_APPLIED;
 }
 
 // unknown

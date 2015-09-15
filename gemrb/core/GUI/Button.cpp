@@ -31,7 +31,6 @@
 
 #include "GameData.h"
 #include "Palette.h"
-#include "Video.h"
 
 namespace GemRB {
 
@@ -50,8 +49,7 @@ Button::Button(Region& frame)
 	ResetEventHandler( MouseEnterButton );
 	ResetEventHandler( MouseLeaveButton );
 	ResetEventHandler( MouseOverButton );
-	//Text = ( char * ) calloc( 64, sizeof(char) );
-	Text = NULL;
+
 	hasText = false;
 	font = core->GetButtonFont();
 	normal_palette = NULL;
@@ -74,13 +72,10 @@ Button::Button(Region& frame)
 }
 Button::~Button()
 {
-	Video* video = core->GetVideoDriver();
 	SetImage(BUTTON_IMAGE_NONE, NULL);
-	video->FreeSprite( Picture );
+	Sprite2D::FreeSprite( Picture );
 	ClearPictureList();
-	if (Text) {
-		free( Text );
-	}
+
 	gamedata->FreePalette( normal_palette);
 	gamedata->FreePalette( disabled_palette);
 }
@@ -96,11 +91,11 @@ void Button::SetImage(BUTTON_IMAGE_TYPE type, Sprite2D* img)
 
 	if (type <= BUTTON_IMAGE_NONE) {
 		for (int i=0; i < BUTTON_IMAGE_TYPE_COUNT; i++) {
-			core->GetVideoDriver()->FreeSprite(buttonImages[i]);
+			Sprite2D::FreeSprite(buttonImages[i]);
 		}
 		Flags &= IE_GUI_BUTTON_NO_IMAGE;
 	} else {
-		core->GetVideoDriver()->FreeSprite(buttonImages[type]);
+		Sprite2D::FreeSprite(buttonImages[type]);
 		buttonImages[type] = img;
 		// FIXME: why do we not acquire the image here?!
 		/*
@@ -159,10 +154,14 @@ void Button::CloseUpColor()
 	starttime = newtime + 40;
 }
 
-bool Button::HasBackground()
+bool Button::IsOpaque() const
 {
-	if (Flags&IE_GUI_BUTTON_PICTURE && !Picture) return false;
-	return Control::HasBackground();
+	if (AnimPicture || (Picture && (Flags & IE_GUI_BUTTON_PICTURE))) {
+		// no good way of knowing if a button has transparancy :(
+		// TODO: maybe add something to Sprite2D for determining alpha status
+		return false;
+	}
+	return Control::IsOpaque();
 }
 
 /** Draws the Control on the Output Display */
@@ -175,11 +174,6 @@ void Button::DrawInternal(Region& rgn)
 		Sprite2D* Image = NULL;
 
 		switch (State) {
-			case IE_GUI_BUTTON_UNPRESSED:
-			case IE_GUI_BUTTON_LOCKED:
-			case IE_GUI_BUTTON_LOCKED_PRESSED:
-				Image = buttonImages[BUTTON_IMAGE_UNPRESSED];
-				break;
 			case IE_GUI_BUTTON_FAKEPRESSED:
 			case IE_GUI_BUTTON_PRESSED:
 				Image = buttonImages[BUTTON_IMAGE_PRESSED];
@@ -191,9 +185,9 @@ void Button::DrawInternal(Region& rgn)
 			case IE_GUI_BUTTON_FAKEDISABLED:
 				Image = buttonImages[BUTTON_IMAGE_DISABLED];
 				break;
-		}
-		if (!Image) {
-			Image = buttonImages[BUTTON_IMAGE_UNPRESSED];
+			default:
+				Image = buttonImages[BUTTON_IMAGE_UNPRESSED];
+				break;
 		}
 		if (Image) {
 			// FIXME: maybe it's useless...
@@ -208,19 +202,6 @@ void Button::DrawInternal(Region& rgn)
 		//shift the writing/border a bit
 		rgn.x += PushOffset.x;
 		rgn.y += PushOffset.y;
-	}
-
-	// Button picture
-	if (AnimPicture) {
-		int xOffs = ( Width / 2 ) - ( AnimPicture->Width / 2 );
-		int yOffs = ( Height / 2 ) - ( AnimPicture->Height / 2 );
-		Region r( rgn.x + xOffs, rgn.y + yOffs, (int)(AnimPicture->Width * Clipping), AnimPicture->Height );
-
-		if (Flags & IE_GUI_BUTTON_CENTER_PICTURES) {
-			video->BlitSprite( AnimPicture, rgn.x + xOffs + AnimPicture->XPos, rgn.y + yOffs + AnimPicture->YPos, true, &r );
-		} else {
-			video->BlitSprite( AnimPicture, rgn.x + xOffs, rgn.y + yOffs, true, &r );
-		}
 	}
 
 	// Button picture
@@ -251,11 +232,25 @@ void Button::DrawInternal(Region& rgn)
 
 			// do NOT uncomment this, you can't change Changed or invalidate things from
 			// the middle of Window::DrawWindow() -- it needs moving to somewhere else
+			// ^ We can now... should this be uncommented then?
 			//CloseUpColor();
 		}
 		else {
 			Region r( picXPos, picYPos, (int)(Picture->Width * Clipping), Picture->Height );
 			video->BlitSprite( Picture, picXPos + Picture->XPos, picYPos + Picture->YPos, true, &r );
+		}
+	}
+
+	// Button animation
+	if (AnimPicture) {
+		int xOffs = ( Width / 2 ) - ( AnimPicture->Width / 2 );
+		int yOffs = ( Height / 2 ) - ( AnimPicture->Height / 2 );
+		Region r( rgn.x + xOffs, rgn.y + yOffs, (int)(AnimPicture->Width * Clipping), AnimPicture->Height );
+
+		if (Flags & IE_GUI_BUTTON_CENTER_PICTURES) {
+			video->BlitSprite( AnimPicture, rgn.x + xOffs + AnimPicture->XPos, rgn.y + yOffs + AnimPicture->YPos, true, &r );
+		} else {
+			video->BlitSprite( AnimPicture, rgn.x + xOffs, rgn.y + yOffs, true, &r );
 		}
 	}
 
@@ -311,17 +306,19 @@ void Button::DrawInternal(Region& rgn)
 			align |= IE_FONT_SINGLE_LINE;
 		}
 
-		Region r;
+		Region r = rgn;
 		if (Picture && (Flags & IE_GUI_BUTTON_PORTRAIT) == IE_GUI_BUTTON_PORTRAIT) {
 			// constrain the label (status icons) to the picture bounds
-			// FIXME: we are subtracting IE_FONT_PADDING because Font indents 5px, but we dont want that here
-			r = Region(picXPos - IE_FONT_PADDING, picYPos + IE_FONT_PADDING,
-					   Picture->Width + IE_FONT_PADDING, Picture->Height);
-		} else {
-			r = Region( rgn.x, rgn.y, rgn.w - 2, rgn.h - 2);
+			// FIXME: we have to do +1 because the images are 1 px too small to fit 3 icons...
+			r = Region(picXPos, picYPos, Picture->Width + 1, Picture->Height);
+		} else if ((IE_GUI_BUTTON_ALIGN_LEFT | IE_GUI_BUTTON_ALIGN_RIGHT |
+				   IE_GUI_BUTTON_ALIGN_TOP   | IE_GUI_BUTTON_ALIGN_BOTTOM |
+					IE_GUI_BUTTON_MULTILINE) & Flags) {
+			// FIXME: I'm unsure when exactly this adjustment applies...
+			r = Region( rgn.x + 5, rgn.y + 5, rgn.w - 10, rgn.h - 10);
 		}
 
-		font->Print( r, ( unsigned char * ) Text, ppoi, (ieByte) align, true );
+		font->Print( r, Text, ppoi, (ieByte) align );
 	}
 
 	if (! (Flags&IE_GUI_BUTTON_NO_IMAGE)) {
@@ -407,7 +404,6 @@ void Button::OnMouseDown(unsigned short x, unsigned short y,
 	unsigned short Button, unsigned short Mod)
 {
 	if (State == IE_GUI_BUTTON_DISABLED) {
-		Control::OnMouseDown(x,y,Button,Mod);
 		return;
 	}
 
@@ -619,27 +615,23 @@ void Button::OnMouseLeave(unsigned short /*x*/, unsigned short /*y*/)
 }
 
 /** Sets the Text of the current control */
-void Button::SetText(const char* string)
+void Button::SetText(const String& string)
 {
-	free(Text);
-	Text = NULL;
-	if (string == NULL) {
-		hasText = false;
-	} else if (string[0] == 0) {
-		hasText = false;
-	} else {
-		Text = strndup( string, 255 );
+	Text = string;
+	if (string.length()) {
 		if (Flags&IE_GUI_BUTTON_LOWERCASE)
-			strtolower( Text );
+			StringToLower( Text );
 		else if (Flags&IE_GUI_BUTTON_CAPS)
-			strtoupper( Text );
+			StringToUpper( Text );
 		hasText = true;
+	} else {
+		hasText = false;
 	}
 	MarkDirty();
 }
 
 /** Set Event Handler */
-bool Button::SetEvent(int eventType, EventHandler handler)
+bool Button::SetEvent(int eventType, ControlEventHandler handler)
 {
 	switch (eventType) {
 		case IE_GUI_BUTTON_ON_PRESS:
@@ -705,7 +697,7 @@ void Button::UpdateState(const char* VariableName, unsigned int Sum)
 /** Sets the Picture */
 void Button::SetPicture(Sprite2D* newpic)
 {
-	core->GetVideoDriver()->FreeSprite( Picture );
+	Sprite2D::FreeSprite( Picture );
 	ClearPictureList();
 	Picture = newpic;
 	MarkDirty();
@@ -715,10 +707,9 @@ void Button::SetPicture(Sprite2D* newpic)
 /** Clears the list of Pictures */
 void Button::ClearPictureList()
 {
-	Video* video = core->GetVideoDriver();
 	for (std::list<Sprite2D*>::iterator iter = PictureList.begin();
 		 iter != PictureList.end(); ++iter)
-		video->FreeSprite( *iter );
+		Sprite2D::FreeSprite( *iter );
 	PictureList.clear();
 	MarkDirty();
 }
@@ -746,7 +737,7 @@ bool Button::IsPixelTransparent(unsigned short x, unsigned short y)
 void Button::SetTextColor(const Color &fore, const Color &back)
 {
 	gamedata->FreePalette( normal_palette );
-	normal_palette = core->CreatePalette( fore, back );
+	normal_palette = new Palette( fore, back );
 	MarkDirty();
 }
 

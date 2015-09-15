@@ -24,8 +24,10 @@
 #include "exports.h"
 #include "globals.h"
 
+#include "Interface.h"
 #include "Scriptable/Scriptable.h"
 
+#include <algorithm>
 #include <queue>
 
 namespace GemRB {
@@ -57,11 +59,12 @@ class Wall_Polygon;
 #define SPF_ONCE		0x0002	//only spawn a single time
 #define SPF_WAIT		0x0004	//spawn temporarily disabled
 
-//area flags
-#define AF_NOSAVE         1
-#define AF_TUTORIAL       2
-#define AF_DEADMAGIC      4
-#define AF_DREAM          8
+//area flags (pst uses them only for resting purposes!)
+#define AF_NOSAVE         1 // unused in pst
+#define AF_TUTORIAL       2 // pst: "You cannot rest here."
+#define AF_DEADMAGIC      4 // pst: "You cannot rest right now."
+//                        6 // pst: "You must obtain permission to rest here."
+#define AF_DREAM          8 // unused in pst
 
 //area types
 #define AT_OUTDOOR        1
@@ -140,13 +143,52 @@ struct Entrance {
 };
 
 class MapNote {
+	void swap(MapNote& mn) {
+		if (&mn == this) return;
+		std::swap(strref, mn.strref);
+		std::swap(color, mn.color);
+		std::swap(text, mn.text);
+		std::swap(Pos, mn.Pos);
+	}
 public:
+	// FIXME: things can get messed up by exposing these (specifically strref and text)
 	ieStrRef strref;
-	Point Pos;
 	ieWord color;
-	char *text;
-	MapNote() { text=NULL; strref=0; Pos.empty(); color=0; }
-	~MapNote() { if(text) free(text); }
+	String* text;
+	Point Pos;
+
+	MapNote& operator=( MapNote mn ) {
+		// note the pass by value
+		mn.swap(*this);
+		return *this;
+	}
+	MapNote( const MapNote& mn )
+	: strref(mn.strref), color(mn.color), Pos(mn.Pos) {
+		if (mn.text) {
+			text = new String(*mn.text);
+		} else {
+			text = NULL;
+		}
+	}
+	MapNote(String* text, ieWord color)
+	: strref(0xffffffff), color(color), text(text)
+	{
+		if (text) {
+			//update custom strref
+			char* mbstring = MBCStringFromString(*text);
+			strref = core->UpdateString( strref, mbstring);
+			free(mbstring);
+		}
+	}
+	MapNote(const ieStrRef ref, ieWord color)
+	: strref(ref), color(color)
+	{
+		text = core->GetString(ref);
+	}
+
+	~MapNote() {
+		delete text;
+	}
 };
 
 class Spawn {
@@ -166,7 +208,7 @@ public:
 	ieWord DayChance;
 	ieWord NightChance;
 	ieDword NextSpawn;
-	Spawn() { Creatures=NULL; NextSpawn = 0; }
+	Spawn();
 	~Spawn() { if(Creatures) free(Creatures); }
 	unsigned int GetCreatureCount() { return Count; }
 };
@@ -186,6 +228,7 @@ public:
 	SpawnGroup(unsigned int size) {
 		ResRefs = (ieResRef *) calloc(size, sizeof(ieResRef) );
 		Count = size;
+		Level = 0;
 	}
 	~SpawnGroup() {
 		if (ResRefs) {
@@ -286,7 +329,7 @@ private:
 	std::list< Particles*> particles;
 	std::vector< Entrance*> entrances;
 	std::vector< Ambient*> ambients;
-	std::vector< MapNote*> mapnotes;
+	std::vector<MapNote> mapnotes;
 	std::vector< Spawn*> spawns;
 	Actor** queue[QUEUE_COUNT];
 	int Qcount[QUEUE_COUNT];
@@ -355,6 +398,7 @@ public:
 	bool GetBlocked(unsigned int x, unsigned int y, unsigned int size);
 	unsigned int GetBlocked(unsigned int x, unsigned int y);
 	unsigned int GetBlocked(const Point &p);
+	Scriptable *GetScriptableByGlobalID(ieDword objectID);
 	Door *GetDoorByGlobalID(ieDword objectID);
 	Container *GetContainerByGlobalID(ieDword objectID);
 	InfoPoint *GetInfoPointByGlobalID(ieDword objectID);
@@ -364,7 +408,8 @@ public:
 	Actor **GetAllActorsInRadius(const Point &p, int flags, unsigned int radius, Scriptable *see=NULL);
 	Actor* GetActor(const char* Name, int flags);
 	Actor* GetActor(int i, bool any);
-	Actor* GetActorByDialog(const char* resref);
+	Scriptable* GetActorByDialog(const char* resref);
+	Scriptable* GetItemByDialog(ieResRef resref);
 	Actor* GetActorByResource(const char* resref);
 	Actor* GetActorByScriptName(const char* name);
 	bool HasActor(Actor *actor);
@@ -468,10 +513,12 @@ public:
 	unsigned int GetAmbientCount() { return (unsigned int) ambients.size(); }
 
 	//mapnotes
-	void AddMapNote(const Point &point, int color, char *text, ieStrRef strref);
+	void AddMapNote(const Point &point, int color, String* text);
+	void AddMapNote(const Point &point, int color, ieStrRef strref);
+	void AddMapNote(const Point &point, const MapNote& note);
 	void RemoveMapNote(const Point &point);
-	MapNote *GetMapNote(int i) { return mapnotes[i]; }
-	MapNote *GetMapNote(const Point &point);
+	const MapNote& GetMapNote(int i) { return mapnotes[i]; }
+	const MapNote* MapNoteAtPoint(const Point &point);
 	unsigned int GetMapNoteCount() { return (unsigned int) mapnotes.size(); }
 	//restheader
 	/* May spawn creature(s), returns the remaining number of (unrested) hours for interrupted rest */

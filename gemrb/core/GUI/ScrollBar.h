@@ -64,41 +64,44 @@ enum IE_SCROLLBAR_IMAGE_TYPE {
 class GEM_EXPORT ScrollBar : public Control {
 protected:
 	void DrawInternal(Region& drawFrame);
-	bool HasBackground();
+
 public:
 	ScrollBar(const Region& frame, Sprite2D*[IE_SCROLLBAR_IMAGE_COUNT]);
 	~ScrollBar(void);
-	/** safe method to get the height of a frame */
-	int GetFrameHeight(int frame) const;
+
+	bool IsOpaque() const;
 	/**sets position, updates associated stuff */
 	void SetPos(ieDword NewPos);
-	void SetPosForY(short y);
+	ieWord GetPos() const { return Pos; };
+
 	void ScrollUp();
 	void ScrollDown();
 	double GetStep();
 	/** refreshes scrollbar if associated with VarName */
 	void UpdateState(const char* VarName, unsigned int Sum);
+	/** Sets the Maximum Value of the ScrollBar */
+	void SetMax(unsigned short Max);
+	void SetScrollAmount(unsigned short amount) { ScrollDelta = amount; }
 private: //Private attributes
+	/** safe method to get the height of a frame */
+	int GetFrameHeight(int frame) const;
+	void SetPosForY(short y);
 	/** Images for drawing the Scroll Bar */
 	Sprite2D* Frames[IE_SCROLLBAR_IMAGE_COUNT];
 	/** Range of the slider in pixels. The height - buttons - slider */
-	ieDword SliderRange;
+	int SliderRange;
 	/** a pixel position between 0 and SliderRange*/
 	unsigned short SliderYPos;
 	/** Item Index */
-	unsigned short Pos;
-	/** slider y delta between steps */
-	double stepPx;
+	ieWord Pos;
 	/** Scroll Bar Status */
 	unsigned short State;
-private:
-	void CalculateStep();
-public:
-	/** Sets the Maximum Value of the ScrollBar */
-	void SetMax(unsigned short Max);
+	/** amount by which value should change on scrolling */
+	unsigned short ScrollDelta;
+
+public: // Public Events
 	/** TextArea Associated Control */
 	Control* ta;
-public: // Public Events
 	/** Mouse Button Down */
 	void OnMouseDown(unsigned short x, unsigned short y, unsigned short Button,
 		unsigned short Mod);
@@ -110,9 +113,9 @@ public: // Public Events
 	/** Mouse Wheel Scroll Event */
 	void OnMouseWheelScroll(short x, short y);
 	/** Set handler for specified event */
-	bool SetEvent(int eventType, EventHandler handler);
+	bool SetEvent(int eventType, ControlEventHandler handler);
 	/** OnChange Scripted Event Function Name */
-	EventHandler ScrollBarOnChange;
+	ControlEventHandler ScrollBarOnChange;
 };
 
 }

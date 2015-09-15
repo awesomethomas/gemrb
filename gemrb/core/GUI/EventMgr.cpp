@@ -232,6 +232,7 @@ void EventMgr::MouseMove(unsigned short x, unsigned short y)
 
 void EventMgr::RefreshCursor(int idx)
 {
+	assert(idx != IE_CURSOR_INVALID);
 	Video *video = core->GetVideoDriver();
 	if (idx&IE_CURSOR_GRAY) {
 		video->SetMouseGrayed(true);
@@ -362,6 +363,7 @@ void EventMgr::KeyPress(unsigned char Key, unsigned short Mod)
 		if (core->GetGameControl()
 			&& !MButtons // checking for drag actions
 			&& !core->IsPresentingModalWindow()
+			&& !core->InCutSceneMode()
 			&& !core->GetKeyMap()->ResolveKey(Key, 0)) {
 			core->GetGame()->SetHotKey(toupper(Key));
 		}
@@ -492,11 +494,11 @@ unsigned long EventMgr::SetRKFlags(unsigned long arg, unsigned int op)
 {
 	unsigned long tmp = rk_flags;
 	switch (op) {
-		case BM_SET: tmp = arg; break;
-		case BM_OR: tmp |= arg; break;
-		case BM_NAND: tmp &= ~arg; break;
-		case BM_XOR: tmp ^= arg; break;
-		case BM_AND: tmp &= arg; break;
+		case OP_SET: tmp = arg; break;
+		case OP_OR: tmp |= arg; break;
+		case OP_NAND: tmp &= ~arg; break;
+		case OP_XOR: tmp ^= arg; break;
+		case OP_AND: tmp &= arg; break;
 		default: tmp = 0; break;
 	}
 	rk_flags=tmp;

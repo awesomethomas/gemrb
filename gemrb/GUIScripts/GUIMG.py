@@ -85,8 +85,8 @@ def OpenMageWindow ():
 	OldPortraitWindow = GUICommonWindows.PortraitWindow
 	PortraitWindow = GUICommonWindows.OpenPortraitWindow (0)
 
-	SetupMageWindow()
 	GUICommonWindows.SetSelectionChangeHandler (SetupMageWindow)
+	SetupMageWindow()
 	return
 
 def SetupMageWindow ():
@@ -489,20 +489,6 @@ def OpenSequencerWindow ():
 
 	ContingencyTextArea = Window.GetControl (25)
 
-	if Target == 2:
-		if Count < 3:
-			Title.SetText (55374)
-			ContingencyTextArea.SetText (60420)
-		else:
-			Title.SetText (55375)
-			ContingencyTextArea.SetText (55372)
-	else:
-		if Count < 3:
-			Title.SetText (11941)
-		else:
-			Title.SetText (55376)
-		ContingencyTextArea.SetText (55373)
-
 	CondSelect = Window.GetControl (4)
 	CondLabel = Window.GetControl (0x10000000)
 	TargSelect = Window.GetControl (6)
@@ -524,21 +510,17 @@ def OpenSequencerWindow ():
 		sb = Window.GetControl (7)
 		sb.SetPos (-1,-1)
 	else:
-		CondSelect.SetFlags (IE_GUI_TEXTAREA_SELECTABLE, OP_SET)
-		CondSelect.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, ContingencyHelpCondition)
+		CondSelect.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, ContingencyHelpCondition)
 		CondSelect.SetVarAssoc ("ContCond", 0)
-		for elem in ContCond:
-			CondSelect.Append (elem[0], -1)
+		CondSelect.SetOptions ([elem[0] for elem in ContCond])
 
-		TargSelect.SetFlags (IE_GUI_TEXTAREA_SELECTABLE, OP_SET)
-		TargSelect.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, ContingencyHelpTarget)
-		TargSelect.SetVarAssoc ("ContTarg", 0)
-		for elem in ContTarg:
-			TargSelect.Append (elem[0], -1)
-			#check if target is only self
-			if Target:
-				TargSelect.SetVarAssoc ("ContTarg", 1)
-				break
+		TargSelect.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, ContingencyHelpTarget)
+		if Target:
+			TargSelect.SetVarAssoc ("ContTarg", 1)
+			TargSelect.SetOptions ([ContTarg[0][0]])
+		else:
+			TargSelect.SetVarAssoc ("ContTarg", 0)
+			TargSelect.SetOptions ([elem[0] for elem in ContTarg])
 
 	GemRB.SetVar ("SpellType", 0)
 	TypeButton.SetVarAssoc ("SpellType", 1)
@@ -563,6 +545,22 @@ def OpenSequencerWindow ():
 	CancelButton.SetEvent (IE_GUI_BUTTON_ON_PRESS, ContingencyCancel)
 	ContTypePressed ()
 	Window.ShowModal (MODAL_SHADOW_GRAY)
+
+	# this is here because core runs the selection change event handler too often
+	if Target == 2:
+		if Count < 3:
+			Title.SetText (55374)
+			ContingencyTextArea.SetText (60420)
+		else:
+			Title.SetText (55375)
+			ContingencyTextArea.SetText (55372)
+	else:
+		if Count < 3:
+			Title.SetText (11941)
+		else:
+			Title.SetText (55376)
+		ContingencyTextArea.SetText (55373)
+
 	return
 
 def UpdateSpellList ():
@@ -574,7 +572,8 @@ def UpdateSpellList ():
 		Type = IE_SPELL_TYPE_WIZARD
 
 	Label = Window.GetControl (0x1000001d)
-	Label.SetText (GemRB.GetString(12137)+str(Level) )
+	GemRB.SetToken ('LEVEL', str(Level))
+	Label.SetText (12137)
 
 	BuildSpellList(pc, Type, Level-1)
 
@@ -583,14 +582,14 @@ def UpdateSpellList ():
 
 	cnt = len(names)
 	j = 0
-	for i in range(11,20):
+	for i in range(11, 22):
 		Button = Window.GetControl (i)
 		Button.SetFont ("NUMBER")
 		Button.SetFlags (IE_GUI_BUTTON_ALIGN_RIGHT|IE_GUI_BUTTON_ALIGN_BOTTOM,OP_OR)
 		if j<cnt:
 			Button.SetSpellIcon (names[j], 1)
 			Button.SetText( str(SpellList[names[j]]) )
-			Button.SetVarAssoc("Index", j)
+			Button.SetVarAssoc("PickedSpell", j)
 			Button.SetEvent (IE_GUI_BUTTON_ON_PRESS, ContingencyHelpSpell)
 			Button.SetState (IE_GUI_BUTTON_ENABLED)
 		else:
@@ -613,6 +612,50 @@ def UpdateSpellList ():
 		OkButton.SetState (IE_GUI_BUTTON_DISABLED)
 	else:
 		OkButton.SetState (IE_GUI_BUTTON_ENABLED)
+	return
+
+def BuildSpellList (pc, type, level):
+	global SpellList
+
+	import Spellbook
+
+	if not Exclusions:
+		LoadExclusions()
+
+	SpellList = {}
+	memoedSpells = Spellbook.GetMemorizedSpells (pc, type, level)
+
+	# are we a sorcerer-style?
+	SorcererBook = Spellbook.HasSorcererBook (pc)
+
+	names = []
+	for s in memoedSpells:
+		names.append(s["SpellResRef"])
+
+	if SorcererBook:
+		dec = 0
+		for selected in Spell1, Spell2, Spell3:
+			if selected in names:
+				dec += 1
+		# decrease count for all spells
+		if dec > 0:
+			for ms in memoedSpells:
+				ms["MemoCount"] -= dec
+	else:
+		for s in memoedSpells:
+			sref = s["SpellResRef"]
+			for selected in Spell1, Spell2, Spell3:
+				if sref == selected:
+					s["MemoCount"] -= 1
+
+	for s in memoedSpells:
+		if s["MemoCount"] < 1:
+			continue
+
+		spell = s["SpellResRef"]
+		if spell in Exclusions[level]:
+			continue
+		SpellList[spell] = s["MemoCount"]
 	return
 
 def ContTypePressed ():
@@ -642,6 +685,7 @@ def ContingencyOk ():
 	if GemRB.LearnSpell (pc, Source+"d", LS_MEMO):
 		print "EEEEK! Failed to learn sequencer/contingency!\n\n"
 	OtherWindow.Unload()
+	GUICommon.GameWindow.SetVisible (WINDOW_VISIBLE) # restores focus
 	return
 
 def ContingencyCancel ():
@@ -649,6 +693,7 @@ def ContingencyCancel ():
 
 	GemRB.SetPlayerStat (pc, IE_IDENTIFYMODE, 0)
 	OtherWindow.Unload()
+	GUICommon.GameWindow.SetVisible (WINDOW_VISIBLE) # restores focus
 	return
 
 def ContingencyHelpSpell ():
@@ -656,7 +701,7 @@ def ContingencyHelpSpell ():
 
 	names = SpellList.keys()
 	names.sort()
-	i = GemRB.GetVar("Index")
+	i = GemRB.GetVar("PickedSpell")
 	spell = names[i]
 
 	if Spell1=="" and Count>0:
@@ -718,37 +763,11 @@ def LoadExclusions():
 	for i in range (Columns):
 		Exclusions.append ([])
 		for j in range (Rows):
-			spell = ExclusionTable.GetValue (j,i,0)
+			spell = ExclusionTable.GetValue (j, i, GTV_STR)
 			if spell[0]=="*":
 				break
 			Exclusions[i].append (spell.lower())
 
-	return
-
-#TODO: build a correct list for sorcerers too!
-def BuildSpellList (pc, type, level):
-	global SpellList
-
-	if not Exclusions:
-		LoadExclusions()
-
-	SpellList = {}
-	dummy = [Spell1,Spell2,Spell3]
-	mem_cnt = GemRB.GetMemorizedSpellsCount (pc, type, level, False)
-
-	for i in range(mem_cnt):
-		ms = GemRB.GetMemorizedSpell (pc, type, level, i)
-		if ms["Flags"]:
-			spell = ms["SpellResRef"]
-			if spell in Exclusions[level]:
-				continue
-			if spell in dummy:
-				dummy.remove(spell)
-				continue
-			if not (spell in SpellList):
-				SpellList[spell] = 1
-			else:
-				SpellList[spell] = SpellList[spell]+1
 	return
 
 def LevelIncrease():

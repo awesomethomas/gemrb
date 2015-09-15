@@ -183,14 +183,14 @@ def CustomPress ():
 
 	CustomWindow = Window = GemRB.LoadWindow (18)
 	PortraitList1 = Window.GetControl (2)
-	RowCount1 = PortraitList1.GetPortraits (0)
-	PortraitList1.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, LargeCustomPortrait)
+	RowCount1 = PortraitList1.ListResources (CHR_PORTRAITS, 0)
+	PortraitList1.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, LargeCustomPortrait)
 	GemRB.SetVar ("Row1", RowCount1)
 	PortraitList1.SetVarAssoc ("Row1",RowCount1)
 
 	PortraitList2 = Window.GetControl (4)
-	RowCount2 = PortraitList2.GetPortraits (1)
-	PortraitList2.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, SmallCustomPortrait)
+	RowCount2 = PortraitList2.ListResources (CHR_PORTRAITS, 1)
+	PortraitList2.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, SmallCustomPortrait)
 	GemRB.SetVar ("Row2", RowCount2)
 	PortraitList2.SetVarAssoc ("Row2",RowCount2)
 
@@ -225,6 +225,6 @@ def NextPress ():
 	PortraitName = PortraitTable.GetRowName (LastPortrait )
 	GemRB.SetToken ("SmallPortrait", PortraitName+"S")
 	GemRB.SetToken ("LargePortrait", PortraitName+"L")
-	#GemRB.SetVar ("PortraitIndex",LastPortrait)
+	GemRB.SetVar ("PortraitIndex", LastPortrait)
 	GemRB.SetNextScript ("CharGen2") #Before race
 	return

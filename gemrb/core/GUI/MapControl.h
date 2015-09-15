@@ -50,7 +50,6 @@ protected:
 	/** Draws the Control on the Output Display */
 	void DrawInternal(Region& drawFrame);
 	void DrawFog(const Region& rgn);
-	bool NeedsDraw() {return true;}
 public:
 	int ScrollX, ScrollY;
 	int NotePosX, NotePosY;
@@ -70,12 +69,14 @@ public:
 	// Size of area viewport. FIXME: hack!
 	short ViewWidth, ViewHeight;
 	short XCenter, YCenter;
-	EventHandler MapControlOnPress;
-	EventHandler MapControlOnRightPress;
-	EventHandler MapControlOnDoublePress;
+	ControlEventHandler MapControlOnPress;
+	ControlEventHandler MapControlOnRightPress;
+	ControlEventHandler MapControlOnDoublePress;
 
 	MapControl(const Region& frame);
 	~MapControl(void);
+
+	bool NeedsDraw() const {return true;}
 	/** Refreshes the control after its associated variable has changed */
 	void UpdateState(const char *VariableName, unsigned int Sum);
 	/** Compute parameters after changes in control's or screen geometry */
@@ -96,7 +97,7 @@ public:
 	/** Special Key Press */
 	bool OnSpecialKeyPress(unsigned char Key);
 	/** Set handler for specified event */
-	bool SetEvent(int eventType, EventHandler handler);
+	bool SetEvent(int eventType, ControlEventHandler handler);
 private:
 	/** Call event handler on click */
 	void ClickHandle(unsigned short Button);

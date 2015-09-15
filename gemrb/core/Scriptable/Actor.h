@@ -171,6 +171,7 @@ namespace GemRB {
 #define UI_CRITICAL  4       //a critical hit happened
 #define UI_FAKE      8       //deplete the item but don't actually apply its effects
 #define UI_NOAURA    16      //ignore spellcasting aura checks
+#define UI_NOCHARGE  32      //don't deplete the item
 
 //used to mask off current profs
 #define PROFS_MASK  0x07
@@ -319,7 +320,7 @@ public:
 	ToHitStats ToHit;
 public:
 	ieDword LastExit;    //the global ID of the exit to be used
-	ieDword UsedExit;
+	ieVariable UsedExit; // name of the exit, since global id is not stable after loading a new area
 	ieResRef LastArea;
 	char ShieldRef[2];
 	char HelmetRef[2];
@@ -404,7 +405,6 @@ private:
 	void RefreshPCStats();
 	void RefreshHP();
 	bool ShouldHibernate();
-	void ApplyClassClab(int cls, bool remove);
 	bool ShouldDrawCircle() const;
 	bool HasBodyHeat() const;
 	void SetupFistData();
@@ -539,7 +539,7 @@ public:
 	/* returns a remapped verbal constant strref */
 	ieStrRef GetVerbalConstant(int index) const;
 	/* displaying a random verbal constant */
-	void VerbalConstant(int start, int count) const;
+	void VerbalConstant(int start, int count, bool force=false) const;
 	/* display string or verbal constant depending on what is available */
 	void DisplayStringOrVerbalConstant(int str, int vcstat, int vccount) const;
 	/* inlined dialogue response */
@@ -584,7 +584,7 @@ public:
 	/* sets some of the internal flags */
 	void SetRunFlags(ieDword flags);
 	/* applies the kit abilities, returns false if kit is not applicable */
-	bool ApplyKit(bool remove);
+	bool ApplyKit(bool remove, ieDword baseclass=0);
 	/* applies the class abilities*/
 	void ApplyClab(const char *clab, ieDword max, bool remove);
 	/* calls InitQuickSlot in PCStatStruct */
@@ -606,7 +606,7 @@ public:
 	/* debug function */
 	void GetNextStance();
 	/* learns the given spell, possibly receive XP */
-	int LearnSpell(const ieResRef resref, ieDword flags);
+	int LearnSpell(const ieResRef resref, ieDword flags, int bookmask=-1, int level=-1);
 	/* returns the ranged weapon header associated with the currently equipped projectile */
 	ITMExtHeader *GetRangedWeapon(WeaponInfo &wi) const;
 	/* Returns current weapon range and extended header
@@ -690,7 +690,9 @@ public:
 	/* updates the quick slots */
 	void GetActionButtonRow(ActionButtonRow &qs);
 	/* converts the iwd2 qslot index to our internal representation */
-	int IWD2GemrbQslot (int slotindex);
+	int IWD2GemrbQslot (int slotindex) const;
+	int Gemrb2IWD2Qslot(ieByte actslot, int slotindex) const;
+	void dumpQSlots() const;
 
 	/* Handling automatic stance changes */
 	bool HandleActorStance();
@@ -750,7 +752,7 @@ public:
 	bool UseItemPoint(ieDword slot, ieDword header, const Point &point, ieDword flags);
 	bool UseItem(ieDword slot, ieDword header, Scriptable *target, ieDword flags, int damage = 0);
 	/* Deducts a charge from an item */
-	void ChargeItem(ieDword slot, ieDword header, CREItem *item, Item *itm, bool silent);
+	void ChargeItem(ieDword slot, ieDword header, CREItem *item, Item *itm, bool silent, bool expend = true);
 	/* If it returns true, then default AC=10 and the lesser the better */
 	static int IsReverseToHit();
 	/* initialize the action buttons based on class. If forced, it will override
@@ -759,10 +761,10 @@ public:
 	int GetMaxEncumbrance() const;
 	int GetAbilityBonus(unsigned int ability, int value = -1) const;
 	int GetSkillStat(unsigned int skill) const;
-	int GetSkill(unsigned int skill) const;
+	int GetSkill(unsigned int skill, bool ids=false) const;
 	int GetFeat(unsigned int feat) const;
 	void SetFeat(unsigned int feat, int mode);
-	void SetFeatValue(unsigned int feat, int value);
+	void SetFeatValue(unsigned int feat, int value, bool init = true);
 	void SetUsedWeapon(const char *AnimationType, ieWord *MeleeAnimation,
 		int WeaponType=-1);
 	void SetUsedShield(const char *AnimationType, int WeaponType=-1);
@@ -819,6 +821,7 @@ public:
 	bool IsDualInactive() const;
 	/* true if we are dual-wielding */
 	int IsDualWielding() const;
+	int GetFavoredPenalties() const;
 	bool BlocksSearchMap() const;
 	bool CannotPassEntrance(ieDword exitID) const;
 	void UseExit(ieDword exitID);
@@ -845,7 +848,7 @@ public:
 	/* checks if the alignment matches one of the masking constants */
 	//bool MatchesAlignmentMask(ieDword mask);
 	/** untargetable by spells/attack due to invisibility or sanctuary */
-	bool Untargetable();
+	bool Untargetable(ieResRef spellRef);
 	/* returns true if this it is futile to try to harm actor (dead/sanctuaried) */
 	bool InvalidSpellTarget() const;
 	/* returns true if the spell is useless to cast on target
@@ -885,6 +888,12 @@ public:
 	ieDword GetDisarmingTrap() const { return disarmTrap; }
 	void ReleaseCurrentAction();
 	bool ConcentrationCheck() const;
+	void ApplyEffectCopy(Effect *oldfx, EffectRef &newref, Scriptable *Owner, ieDword param1, ieDword param2);
+	void IncreaseLastRested(int inc) { TicksLastRested += inc; }
+	bool WasClass(ieDword oldClassID) const;
+	unsigned int GetSubRace() const;
+	std::list<int> ListLevels() const;
+	void ChangeSorcererType (ieDword classIdx);
 };
 }
 

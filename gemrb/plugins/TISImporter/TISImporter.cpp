@@ -32,6 +32,7 @@ using namespace GemRB;
 TISImporter::TISImporter(void)
 {
 	str = NULL;
+	headerShift = TilesCount = TilesSectionLen = TileSize = 0;
 }
 
 TISImporter::~TISImporter(void)
@@ -99,7 +100,7 @@ Sprite2D* TISImporter::GetTile(int index)
 			print("FileSize: %ld", str->Size());
 			print("Position: %ld", pos);
 			print("Shift: %d", headerShift);*/
-			print("Corrupt WED file encountered; couldn't find any more tiles at tile %d", index);
+			Log(ERROR, "TISImporter", "Corrupt WED file encountered; couldn't find any more tiles at tile %d", index);
 			last_corrupt = this;
 		}
 	
@@ -111,7 +112,7 @@ Sprite2D* TISImporter::GetTile(int index)
 		spr->XPos = spr->YPos = 0;
 		return spr;
 	}
-	str->Seek( ( index * ( 1024 + 4096 ) + headerShift ), GEM_STREAM_START );
+	str->Seek( pos, GEM_STREAM_START );
 	str->Read( &RevCol, 1024 );
 	int transindex = 0;
 	bool transparent = false;

@@ -164,7 +164,9 @@ enum EffectFlags {
 	EFFECT_NORMAL = 0,
 	EFFECT_DICED = 1,
 	EFFECT_NO_LEVEL_CHECK = 2,
-	EFFECT_NO_ACTOR = 4
+	EFFECT_NO_ACTOR = 4,
+	EFFECT_REINIT_ON_LOAD = 8,
+	EFFECT_PRESET_TARGET = 16
 };
 
 /** Initializes table of available spell Effects used by all the queues. */
@@ -272,6 +274,7 @@ public:
 	Effect *HasEffectWithParam(EffectRef &effect_reference, ieDword param2) const;
 	Effect *HasEffectWithParamPair(EffectRef &effect_reference, ieDword param1, ieDword param2) const;
 	Effect *HasEffectWithResource(EffectRef &effect_reference, const ieResRef resource) const;
+	Effect *HasEffectWithPower(EffectRef &effect_reference, ieDword power) const;
 	Effect *HasSource(const ieResRef source) const;
 	Effect *HasEffectWithSource(EffectRef &effect_reference, const ieResRef source) const;
 	void DecreaseParam1OfEffect(EffectRef &effect_reference, ieDword amount) const;
@@ -304,6 +307,8 @@ public:
 	static bool match_ids(Actor *target, int table, ieDword value);
 	/** returns true if the process should abort applying a stack of effects */
 	int ApplyEffect(Actor* target, Effect* fx, ieDword first_apply, ieDword resistance=1) const;
+	/** just checks if it is a particularly stupid effect that needs its target reset */
+	static bool OverrideTarget(Effect *fx);
 private:
 	/** counts effects of specific opcode, parameters and resource */
 	ieDword CountEffects(ieDword opcode, ieDword param1, ieDword param2, const char *ResRef) const;
@@ -318,6 +323,7 @@ private:
 	Effect *HasOpcodeWithParam(ieDword opcode, ieDword param2) const;
 	Effect *HasOpcodeWithParamPair(ieDword opcode, ieDword param1, ieDword param2) const;
 	Effect *HasOpcodeWithResource(ieDword opcode, const ieResRef resource) const;
+	Effect *HasOpcodeWithPower(ieDword opcode, ieDword power) const;
 	Effect *HasOpcodeWithSource(ieDword opcode, const ieResRef source) const;
 	void DecreaseParam1OfEffect(ieDword opcode, ieDword amount) const;
 	int DecreaseParam3OfEffect(ieDword opcode, ieDword amount, ieDword param2) const;

@@ -22,6 +22,8 @@
 import GemRB
 from ie_restype import RES_WMP, RES_ARE
 
+PARTY_SIZE = GemRB.GetVar ("MaxPartySize")
+
 def IsPST ():
 	return GemRB.GameType == "pst"
 
@@ -57,3 +59,9 @@ def HasHOW ():
 
 def HasTOTL ():
 	return GemRB.HasResource ("ar9700", RES_ARE)
+
+def HasBGT ():
+	return GemRB.HasResource ("ar7200", RES_ARE)
+
+def HasTutu ():
+	return GemRB.HasResource ("fw0125", RES_ARE)

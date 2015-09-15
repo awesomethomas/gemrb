@@ -59,7 +59,6 @@ class DialogHandler;
 #define SF_GUIENABLED    8  //
 #define SF_LOCKSCROLL    16 //don't scroll
 #define SF_CUTSCENE      32 //don't push new actions onto the action queue
-#define SF_TRACKING      64 //draw blue arrows on the edge for creatures
 
 // target modes and types
 // !!! Keep these synchronized with GUIDefines.py !!!
@@ -69,19 +68,6 @@ class DialogHandler;
 #define TARGET_MODE_CAST    3
 #define TARGET_MODE_DEFEND  4
 #define TARGET_MODE_PICK    5
-
-/*
-#define TARGET_SELECT       16
-#define TARGET_NO_DEAD      32
-#define TARGET_POINT        64
-#define TARGET_NO_HIDDEN    128
-#define TARGET_TYPE_NONE    0x000
-#define TARGET_NO_ALLY      0x100 //0x100
-#define TARGET_NO_ENEMY     0x200 //0x200
-#define TARGET_NO_NEUTRAL   0x400
-#define TARGET_NO_SELF      0x800
-#define TARGET_TYPE_ALL      0 //(TARGET_TYPE_ALLY | TARGET_TYPE_ENEMY | TARGET_TYPE_NEUTRAL)
-*/
 
 static const unsigned long tp_steps[8]={3,2,1,0,1,2,3,4};
 
@@ -111,9 +97,9 @@ public:
 protected:
 	/** Draws the Control on the Output Display */
 	void DrawInternal(Region& drawFrame);
-	// GameControl always needs to redraw
-	bool NeedsDraw() { return true; };
 public:
+	// GameControl always needs to redraw
+	bool NeedsDraw() const { return true; };
 	/** Draws the target reticle for Actor movement. */
 	void DrawTargetReticle(Point p, int size, bool animate, bool flash=false, bool actorSelected=false);
 	/** Sets multiple quicksaves flag*/
@@ -152,9 +138,9 @@ private:
 	Point pfs;
 	PathNode* drawPath;
 	unsigned long AIUpdateCounter;
-	int ScreenFlags;
-	int DialogueFlags;
-	char *DisplayText;
+	unsigned int ScreenFlags;
+	unsigned int DialogueFlags;
+	String* DisplayText;
 	unsigned int DisplayTextTime;
 	bool AlwaysRun;
 public: //Events
@@ -180,11 +166,11 @@ public: //Events
 	void SetScrolling(bool scroll);
 	void SetTargetMode(int mode);
 	int GetTargetMode() { return target_mode; }
-	void SetScreenFlags(int value, int mode);
-	void SetDialogueFlags(int value, int mode);
+	void SetScreenFlags(unsigned int value, int mode);
+	void SetDialogueFlags(unsigned int value, int mode);
 	int GetScreenFlags() { return ScreenFlags; }
 	int GetDialogueFlags() { return DialogueFlags; }
-	void SetDisplayText(char *text, unsigned int time);
+	void SetDisplayText(String* text, unsigned int time);
 	void SetDisplayText(ieStrRef text, unsigned int time);
 	/* centers viewport to the points specified */
 	void Center(unsigned short x, unsigned short y);
@@ -244,6 +230,8 @@ public:
 	Point GetFormationPoint(Map *map, unsigned int pos, Point src, Point p);
 	/** calls MoveToPoint or RunToPoint */
 	void CreateMovement(Actor *actor, const Point &p);
+	/** checks if the actor should be running instead of walking */
+	bool ShouldRun(Actor *actor) const;
 	/** Displays a string over an object */
 	void DisplayString(Scriptable* target);
 	/** Displays a string on screen */
@@ -261,7 +249,7 @@ public:
 	void SetupItemUse(int slot, int header, Actor *actor, int targettype, int cnt);
 	/** Page is the spell type + spell level info */
 	void SetupCasting(ieResRef spellname, int type, int level, int slot, Actor *actor, int targettype, int cnt);
-	bool SetEvent(int eventType, EventHandler handler);
+	bool SetEvent(int eventType, ControlEventHandler handler);
 	void ToggleAlwaysRun();
 };
 

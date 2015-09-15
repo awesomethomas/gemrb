@@ -299,17 +299,17 @@ public:
 	ieResRef PreviousArea; //move here if the worldmap exit is illegal?
 	ieResRef LoadMos;
 	ieResRef TextScreen;
-	Actor *timestop_owner;
-	ieDword timestop_end;
 	Particles *weather;
 	int event_timer;
-	EventHandler event_handler; //like in Control
+	EventHandler event_handler;
 	bool hasInfra;
 	bool familiarBlock;
 	bool PartyAttack;
 private:
 	/** reads the challenge rating table */
 	void LoadCRTable();
+	Actor *timestop_owner;
+	ieDword timestop_end;
 public:
 	/** Returns the PC's slot count for partyID */
 	int FindPlayer(unsigned int partyID);
@@ -342,6 +342,7 @@ public:
 	bool SelectPCSingle(int index);
 	/** Get index of selected PC for non-walking env (shops, inventory, ...) */
 	int GetSelectedPCSingle() const;
+	Actor* GetSelectedPCSingle(bool onlyalive);
 	/** (De)selects actor. */
 	bool SelectActor( Actor* actor, bool select, unsigned flags );
 
@@ -452,7 +453,7 @@ public:
 	/** Sets party reputation */
 	void SetReputation(ieDword r);
 	/** Sets the gamescreen control status (pane states, dialog textarea size) */
-	void SetControlStatus(int value, int operation);
+	void SetControlStatus(unsigned int value, int operation);
 	/** Sets party size (1-32000) */
 	void SetPartySize(int value);
 	/** Sets a guiscript function to happen after x AI cycles have elapsed */
@@ -464,7 +465,7 @@ public:
 	/** Adds or removes gold */
 	void AddGold(ieDword add);
 	/** Adds ticks to game time */
-	void AdvanceTime(ieDword add);
+	void AdvanceTime(ieDword add, bool fatigue=true);
 	/** Runs the script engine on the global script and the area scripts
 	areas run scripts on door, infopoint, container, actors too */
 	void UpdateScripts();
@@ -495,10 +496,14 @@ public:
 	ieByte *AllocateMazeData();
 	/** Checks if any timestop effects are active */
 	bool IsTimestopActive() const;
+	int RemainingTimestop() const;
+	Actor *GetTimestopOwner() const { return timestop_owner; };
+	void SetTimestopOwner(Actor *owner) { timestop_owner = owner; };
 	/** Checks the bounty encounters (used in bg1) */
 	bool RandomEncounter(ieResRef &BaseArea);
 	/** Resets the area and bored comment timers of the whole party */
 	void ResetPartyCommentTimes();
+	void ReversePCs();
 private:
 	bool DetermineStartPosType(const TableMgr *strta);
 	ieResRef *GetDream(Map *area);

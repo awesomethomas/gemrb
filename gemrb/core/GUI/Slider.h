@@ -54,10 +54,12 @@ class GEM_EXPORT Slider : public Control  {
 protected:
 	/** Draws the Control on the Output Display */
 	void DrawInternal(Region& drawFrame);
-	bool HasBackground() {return BackGround;}
+
 public:
 	Slider(const Region& frame, short KnobXPos, short KnobYPos, short KnobStep, unsigned short KnobStepsCount, bool Clear = false);
 	~Slider();
+
+	bool IsOpaque() const {return BackGround;}
 	/** Returns the actual Slider Position */
 	unsigned int GetPosition();
 	/** Sets the actual Slider Position trimming to the Max and Min Values */
@@ -100,9 +102,9 @@ public: // Public Events
 	/** Mouse Over Event */
 	void OnMouseOver(unsigned short x, unsigned short y);
 	/** Set handler for specified event */
-	bool SetEvent(int eventType, EventHandler handler);
+	bool SetEvent(int eventType, ControlEventHandler handler);
 	/** OnChange Scripted Event Function Name */
-	EventHandler SliderOnChange;
+	ControlEventHandler SliderOnChange;
 };
 
 }

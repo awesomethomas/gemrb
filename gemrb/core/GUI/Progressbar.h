@@ -48,10 +48,12 @@ class GEM_EXPORT Progressbar : public Control  {
 protected:
 	/** Draws the Control on the Output Display */
 	void DrawInternal(Region& drawFrame);
-	bool HasBackground() { return BackGround; }
+
 public: 
 	Progressbar(const Region& frame, unsigned short KnobStepsCount, bool Clear = false);
 	~Progressbar();
+
+	bool IsOpaque() const { return BackGround; }
 	/** Returns the actual Progressbar Position */
 	unsigned int GetPosition();
 	/** Sets the actual Progressbar Position trimming to the Max and Min Values */
@@ -67,7 +69,7 @@ public:
 	/** Refreshes a progressbar which is associated with VariableName */
 	void UpdateState(const char *VariableName, unsigned int Sum);
 	/** Set handler for specified event */
-	bool SetEvent(int eventType, EventHandler handler);
+	bool SetEvent(int eventType, ControlEventHandler handler);
 
 private: // Private attributes
 	/** BackGround Images. If smaller than the Control Size, the image will be tiled. */
@@ -85,7 +87,7 @@ private: // Private attributes
 	Sprite2D *PBarCap;
 public:
 	/** EndReached Scripted Event Function Name */
-	EventHandler EndReached;
+	ControlEventHandler EndReached;
 };
 
 }

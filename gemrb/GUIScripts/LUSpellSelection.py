@@ -23,7 +23,6 @@ import GUICommon
 import Spellbook
 from GUIDefines import *
 from ie_stats import *
-from ie_restype import RES_BAM
 
 # storage variables
 pc = 0
@@ -32,14 +31,15 @@ KitMask = 0
 
 # basic spell selection
 SpellsWindow = 0		# << spell selection window
-SpellKnownTable = 0		# << known spells per level (table)
+#SpellKnownTable = 0		# << known spells per level (table)
 DoneButton = 0			# << done/next button
 SpellsTextArea = 0		# << spell description area
 SpellsSelectPointsLeft = [0]*9	# << spell selections left per level
 Spells = [0]*9			# << spells learnable per level
 SpellTopIndex = 0		# << scroll bar index
 SpellBook = []			# << array containing all the spell indexes to learn
-MemoBook = [0]*24			# array containing all the spell indexes to memorize
+ButtonCount = 24		# number of spell slots in the window
+MemoBook = [0]*ButtonCount			# array containing all the spell indexes to memorize
 Memorization = 0			# marker for the memorisation part
 SpellLevel = 0			# << current level of spells
 SpellStart = 0			# << starting id of the spell list
@@ -50,8 +50,17 @@ EnhanceGUI = 0			# << scrollbars and extra spell slot for sorcs on LU
 SpellsPickButton = 0		# << button to select random spells
 SpellsCancelButton = 0		# << cancel chargen
 
+IWD2 = False
+SpellBookType = IE_SPELL_TYPE_WIZARD
+if GameCheck.IsIWD2():
+	WIDTH = 800
+	HEIGHT = 600
+	IWD2 = True
+else:
+	WIDTH = 640
+	HEIGHT = 480
 
-def OpenSpellsWindow (actor, table, level, diff, kit=0, gen=0, recommend=True):
+def OpenSpellsWindow (actor, table, level, diff, kit=0, gen=0, recommend=True, booktype=0):
 	"""Opens the spells selection window.
 
 	table should refer to the name of the classes MXSPLxxx.2da.
@@ -63,10 +72,10 @@ def OpenSpellsWindow (actor, table, level, diff, kit=0, gen=0, recommend=True):
 
 	global SpellsWindow, DoneButton, SpellsSelectPointsLeft, Spells, chargen, SpellPointsLeftLabel
 	global SpellsTextArea, SpellsKnownTable, SpellTopIndex, SpellBook, SpellLevel, pc, SpellStart
-	global KitMask, EnhanceGUI, Memorization
+	global KitMask, EnhanceGUI, Memorization, SpellBookType, SpellsPickButton, ButtonCount
 
 	#enhance GUI?
-	if (GemRB.GetVar("GUIEnhancements")&GE_SCROLLBARS):
+	if (GemRB.GetVar("GUIEnhancements")&GE_SCROLLBARS) and not IWD2:
 		EnhanceGUI = 1
 
 	# save our pc
@@ -79,22 +88,29 @@ def OpenSpellsWindow (actor, table, level, diff, kit=0, gen=0, recommend=True):
 	else: # need to implement this if converted to CharGen
 		KitMask = kit 
 
+	if IWD2:
+		# save the spellbook type (class) that corresponds to our table
+		SpellBookType = booktype
+		if not chargen:
+			ButtonCount = 30
+
 	# make sure there is an entry at the given level (bard)
 	SpellsKnownTable = GemRB.LoadTable (table)
-	if not SpellsKnownTable.GetValue (str(level), str(1), 1):
+	if not SpellsKnownTable.GetValue (str(level), str(1), GTV_INT):
 		if chargen:
 			if GameCheck.IsBG2():
-				# HACK
 				GemRB.SetNextScript("GUICG6")
 			elif GameCheck.IsBG1():
 				# HACK
 				from CharGenCommon import next
 				next()
+			elif IWD2:
+				GemRB.SetNextScript ("CharGen7")
 		return
 
 	# load our window
 	if chargen:
-		GemRB.LoadWindowPack("GUICG", 640, 480)
+		GemRB.LoadWindowPack("GUICG", WIDTH, HEIGHT)
 		SpellsWindow = GemRB.LoadWindow (7)
 		if not recommend:
 			GUICommon.CloseOtherWindow (SpellsWindow.Unload)
@@ -134,6 +150,7 @@ def OpenSpellsWindow (actor, table, level, diff, kit=0, gen=0, recommend=True):
 	# setup our variables
 	GemRB.SetVar ("SpellTopIndex", 0)
 	Memorization = 0
+	Class = GemRB.GetPlayerStat (pc, IE_CLASS)
 
 	# the done button also doubles as a next button
 	DoneButton.SetState(IE_GUI_BUTTON_DISABLED)
@@ -144,21 +161,21 @@ def OpenSpellsWindow (actor, table, level, diff, kit=0, gen=0, recommend=True):
 	AlreadyShown = 0
 	for i in range (9):
 		# make sure we always have a value to minus (bards)
-		SecondPoints = SpellsKnownTable.GetValue (str(level-diff), str(i+1), 1)
+		SecondPoints = SpellsKnownTable.GetValue (str(level-diff), str(i+1), GTV_INT)
 		if not SecondPoints:
 			SecondPoints = 0
 
 		# make sure we get more spells of each class before continuing
-		SpellsSelectPointsLeft[i] = SpellsKnownTable.GetValue (str(level), str(i+1), 1) - SecondPoints
+		SpellsSelectPointsLeft[i] = SpellsKnownTable.GetValue (str(level), str(i+1), GTV_INT) - SecondPoints
 		if SpellsSelectPointsLeft[i] <= 0:
 			continue
-		elif chargen and KitMask != 0x4000:
+		elif chargen and KitMask != 0x4000 and (not IWD2 or Class == 11):
 			# specialists get an extra spell per level
 			SpellsSelectPointsLeft[i] += 1
 
 		# chargen character seem to get more spells per level (this is kinda dirty hack)
 		# except sorcerers
-		if chargen and GemRB.GetPlayerStat (pc, IE_CLASS) != 19:
+		if chargen and Class != 19 and not IWD2:
 			SpellsSelectPointsLeft[i] += 1
 
 		# get all the spells of the given level
@@ -168,7 +185,7 @@ def OpenSpellsWindow (actor, table, level, diff, kit=0, gen=0, recommend=True):
 		NumDeleted = 0
 		for j in range (len (Spells[i])):
 			CurrentIndex = j - NumDeleted # this ensure we don't go out of range
-			if Spellbook.HasSpell (pc, IE_SPELL_TYPE_WIZARD, i, Spells[i][CurrentIndex][0]) >= 0:
+			if Spellbook.HasSpell (pc, SpellBookType, i, Spells[i][CurrentIndex][0]) >= 0:
 				del Spells[i][CurrentIndex]
 				NumDeleted += 1
 
@@ -181,17 +198,18 @@ def OpenSpellsWindow (actor, table, level, diff, kit=0, gen=0, recommend=True):
 			if(EnhanceGUI):
 				# setup the scrollbar
 				ScrollBar = SpellsWindow.GetControl (1000)
-				ScrollBar.SetEvent (IE_GUI_SCROLLBAR_ON_CHANGE, ShowSpells)
-				ScrollBar.SetDefaultScrollBar ()
+#				ScrollBar.SetDefaultScrollBar ()
 
 				# only scroll if we have more than 24 spells or 25 if extra 25th spell slot is available in sorcs LevelUp
-				if len (Spells[i]) > ( 24 + ExtraSpellButtons() ):
+				if len (Spells[i]) > ( ButtonCount + ExtraSpellButtons() ):
+					ScrollBar.SetEvent (IE_GUI_SCROLLBAR_ON_CHANGE, ShowSpells)
 					HideUnhideScrollBar(0)
 					if chargen:
-						ScrollBar.SetVarAssoc ("SpellTopIndex", GUICommon.ceildiv ( ( len (Spells[i])-24 ) , 6 ) + 1 )
+						ScrollBar.SetVarAssoc ("SpellTopIndex", GUICommon.ceildiv ( ( len (Spells[i])-ButtonCount ) , 6 ) + 1 )
 					else: #there are five rows of 5 spells in level up of sorcs
-						ScrollBar.SetVarAssoc ("SpellTopIndex", GUICommon.ceildiv ( ( len (Spells[i])-25 ) , 5 ) + 1 )
+						ScrollBar.SetVarAssoc ("SpellTopIndex", GUICommon.ceildiv ( ( len (Spells[i])-ButtonCount-1 ) , 5 ) + 1 )
 				else:
+					ScrollBar.SetEvent (IE_GUI_SCROLLBAR_ON_CHANGE, None)
 					ScrollBar.SetVarAssoc ("SpellTopIndex", 0)
 					HideUnhideScrollBar(1)
 
@@ -222,9 +240,9 @@ def SpellsDonePress ():
 	if sum(MemoBook) > 0:
 		for i in MemoBook:
 			if i:
-				GemRB.MemorizeSpell(pc, IE_SPELL_TYPE_WIZARD, SpellLevel, i-1, 1)
+				GemRB.MemorizeSpell(pc, SpellBookType, SpellLevel, i-1, 1)
 		SpellBook = []
-		MemoBook = [0]*24
+		MemoBook = [0]*ButtonCount
 
 	# save all the spells
 	if not Memorization:
@@ -244,12 +262,12 @@ def SpellsDonePress ():
 				if (EnhanceGUI):
 					# setup the scrollbar
 					ScrollBar = SpellsWindow.GetControl (1000)
-					if len (Spells[i]) > ( 24 + ExtraSpellButtons() ):
+					if len (Spells[i]) > ( ButtonCount + ExtraSpellButtons() ):
 						HideUnhideScrollBar(0)
 						if chargen:
-							ScrollBar.SetVarAssoc ("SpellTopIndex", GUICommon.ceildiv ( ( len (Spells[i])-24 ) , 6 ) + 1 )
+							ScrollBar.SetVarAssoc ("SpellTopIndex", GUICommon.ceildiv ( ( len (Spells[i])-ButtonCount ) , 6 ) + 1 )
 						else:
-							ScrollBar.SetVarAssoc ("SpellTopIndex", GUICommon.ceildiv ( ( len (Spells[i])-25 ) , 5 ) + 1 )
+							ScrollBar.SetVarAssoc ("SpellTopIndex", GUICommon.ceildiv ( ( len (Spells[i])-ButtonCount-1 ) , 5 ) + 1 )
 					else:
 						ScrollBar.SetVarAssoc ("SpellTopIndex", 0)
 						HideUnhideScrollBar(1)
@@ -260,8 +278,8 @@ def SpellsDonePress ():
 				return
 
 		# bg1 lets you memorize spells too (iwd too, but it does it by itself)
-		# TODO: check iwd2, which is currently lacking all spell handling
-		if chargen and GameCheck.IsBG1() and sum(MemoBook) == 0:
+		if chargen and sum(MemoBook) == 0 and \
+		(GameCheck.IsBG1() or (IWD2 and SpellBookType != IE_IWD2_SPELL_SORCERER)):
 			SpellLevel = 0
 			SpellsSelectPointsLeft[SpellLevel] = 1
 			if KitMask != 0x4000:
@@ -273,7 +291,7 @@ def SpellsDonePress ():
 			return
 
 	# close our window and update our records
-	if SpellsWindow and (not chargen or GameCheck.IsBG2()):
+	if SpellsWindow and (not chargen or GameCheck.IsBG2() or IWD2):
 		SpellsWindow.Unload ()
 		SpellsWindow = None
 
@@ -286,6 +304,8 @@ def SpellsDonePress ():
 			# HACK
 			from CharGenCommon import next
 			next()
+		elif IWD2:
+			GemRB.SetNextScript("CharGen7")
 
 	return
 
@@ -300,13 +320,14 @@ def ShowKnownSpells ():
 	Title = SpellsWindow.GetControl (0x10000000)
 	Title.SetText(17189)
 
-	# we have a grid of 24 spells
-	for i in range (24):
+	# we have a grid of 24 (usually) spells
+	for i in range (ButtonCount):
 		# ensure we can learn this many spells
 		SpellButton = SpellsWindow.GetControl (i+SpellStart)
 		if i + j >= len (SpellBook) or not SpellBook[i+j]:
 			SpellButton.SetState (IE_GUI_BUTTON_DISABLED)
 			SpellButton.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_SET)
+			SpellButton.SetEvent(IE_GUI_BUTTON_ON_PRESS, None)
 			continue
 		else:
 			SpellButton.SetState (IE_GUI_BUTTON_ENABLED)
@@ -331,6 +352,11 @@ def ShowKnownSpells ():
 
 	GemRB.SetToken("number", str(SpellsSelectPointsLeft[SpellLevel]))
 	SpellsTextArea.SetText(17253)
+
+	if Memorization == 1:
+		SpellsPickButton.SetState (IE_GUI_BUTTON_DISABLED)
+	else:
+		SpellsPickButton.SetState (IE_GUI_BUTTON_ENABLED)
 
 	return
 
@@ -360,7 +386,7 @@ def MemorizePress ():
 
 		# select the spell and change the done state if need be
 		SpellsSelectPointsLeft[SpellLevel] = SpellsSelectPointsLeft[SpellLevel] - 1
-		MemoBook[i] = Spellbook.HasSpell(pc, IE_SPELL_TYPE_WIZARD, SpellLevel, Spells[SpellLevel][i][0]) + 1 # so all values are above 0 
+		MemoBook[i] = Spellbook.HasSpell(pc, SpellBookType, SpellLevel, Spells[SpellLevel][i][0]) + 1 # so all values are above 0
 		if SpellsSelectPointsLeft[SpellLevel] == 0:
 			DoneButton.SetState (IE_GUI_BUTTON_ENABLED)
 
@@ -375,7 +401,7 @@ def ShowSpells ():
 	j = RowIndex()
 
 	# we have a grid of 24 spells
-	for i in range (24 + ExtraSpellButtons()):
+	for i in range (ButtonCount + ExtraSpellButtons()):
 		# ensure we can learn this many spells
 		SpellButton = SpellsWindow.GetControl (i+SpellStart)
 		if i + j >= len (Spells[SpellLevel]):
@@ -409,9 +435,9 @@ def ShowSpells ():
 			# unset any borders on this button or an un-learnable from last level
 			# will still shade red even though it is clickable
 			SpellButton.SetBorder (0, 0,0, 0,0, 0,0,0,0, 0,0)
-		else: # specialist (shouldn't get here)
+		else: # specialist (for iwd2 which has no green frames)
 			# use the green border state for matching specialist spells
-			SpellButton.SetBorder (0, 0,0, 0,0, 0,0,0,0, 0,0)
+			SpellButton.SetBorder (0, 0,0, 0,0, 0,200,0,100, 1,0)
 			SpellButton.SetState (IE_GUI_BUTTON_FAKEDISABLED)
 
 	# show which spells are selected
@@ -496,7 +522,7 @@ def ShowSelectedSpells ():
 	k = RowIndex()
 
 	# mark all of the spells picked thus far
-	for j in range (24 + ExtraSpellButtons()):
+	for j in range (ButtonCount + ExtraSpellButtons()):
 		if j + k >= len (SpellBook): # make sure we don't call unavailable indexes
 			break
 		if (SpellBook[j+k] and not Memorization) or (Memorization and MemoBook[j+k]): # selected
@@ -514,7 +540,7 @@ def SpellsCancelPress ():
 	This is only callable within character generation."""
 
 	# remove all learned spells
-	Spellbook.RemoveKnownSpells (pc, IE_SPELL_TYPE_WIZARD, 1, 9, 1)
+	Spellbook.RemoveKnownSpells (pc, SpellBookType, 1, 9, 1)
 
 	if GameCheck.IsBG2():
 		# unload teh window and go back
@@ -524,6 +550,10 @@ def SpellsCancelPress ():
 	elif GameCheck.IsBG1():
 		import CharGenCommon
 		CharGenCommon.BackPress()
+	elif IWD2:
+		if SpellsWindow:
+			SpellsWindow.Unload()
+		GemRB.SetNextScript("Feats")
 	else:
 		print "Uh-oh in SpellsCancelPress in", GemRB.GameType
 	return
@@ -543,7 +573,7 @@ def SpellsPickPress ():
 		if SpellsSelectPointsLeft[SpellLevel] == 0:
 			break
 
-		CurrentSpell = AutoTable.GetValue (i, SpellLevel, 0)
+		CurrentSpell = AutoTable.GetValue (i, SpellLevel, GTV_STR)
 		for j in range (len (Spells[SpellLevel])):
 			# we can learn the spell, and it's not in our book
 			if Spells[SpellLevel][j][0].upper() == CurrentSpell.upper() \
@@ -606,6 +636,8 @@ def RowIndex ():
 
 	SpellTopIndex = GemRB.GetVar ("SpellTopIndex")
 	if chargen:
+		return ( SpellTopIndex + 1 ) * 6 - 6
+	elif IWD2: # 30 during level-up
 		return ( SpellTopIndex + 1 ) * 6 - 6
 	elif EnhanceGUI:
 		return ( SpellTopIndex + 1 ) * 5 - 5

@@ -26,8 +26,6 @@
 
 #include "win32def.h"
 
-#include "Video.h"
-
 #include "ie_cursors.h"
 
 namespace GemRB {
@@ -56,14 +54,11 @@ Window::Window(unsigned short WindowID, unsigned short XPos,
 
 Window::~Window()
 {
-	std::vector< Control*>::iterator m = Controls.begin();
-	while (Controls.size() != 0) {
-		Control* ctrl = ( *m );
-		delete ctrl;
-		Controls.erase( m );
-		m = Controls.begin();
+	for (std::vector<Control*>::iterator m = Controls.begin(); m != Controls.end(); ++m) {
+		delete *m;
 	}
-	core->GetVideoDriver()->FreeSprite( BackGround );
+	Controls.clear();
+	Sprite2D::FreeSprite( BackGround );
 	BackGround = NULL;
 }
 /** Add a Control in the Window */
@@ -73,10 +68,11 @@ void Window::AddControl(Control* ctrl)
 		return;
 	}
 	ctrl->Owner = this;
-	for (size_t i = 0; i < Controls.size(); i++) {
-		if (Controls[i]->ControlID == ctrl->ControlID) {
-			delete( Controls[i] );
-			Controls[i] = ctrl;
+	for (std::vector<Control*>::iterator m = Controls.begin(); m != Controls.end(); ++m) {
+		if ((*m)->ControlID == ctrl->ControlID) {
+			ControlRemoved(*m);
+			delete *m;
+			*m = ctrl;
 			Invalidate();
 			return;
 		}
@@ -88,7 +84,7 @@ void Window::AddControl(Control* ctrl)
 void Window::SetBackGround(Sprite2D* img, bool clean)
 {
 	if (clean && BackGround) {
-		core->GetVideoDriver()->FreeSprite( this->BackGround );
+		Sprite2D::FreeSprite( this->BackGround );
 	}
 	BackGround = img;
 	Invalidate();
@@ -100,9 +96,9 @@ void Window::DrawWindow()
 	Video* video = core->GetVideoDriver();
 	Region clip( XPos, YPos, Width, Height );
 	//Frame && Changed
-	if ( (Flags & (WF_FRAME|WF_CHANGED) )== (WF_FRAME|WF_CHANGED) ) {
+	if ( (Flags & (WF_FRAME|WF_CHANGED) ) == (WF_FRAME|WF_CHANGED) ) {
 		Region screen( 0, 0, core->Width, core->Height );
-		video->SetClipRect( NULL );
+		video->SetScreenClip( NULL );
 		//removed this?
 		video->DrawRect( screen, ColorBlack );
 		if (core->WindowFrames[0])
@@ -113,34 +109,51 @@ void Window::DrawWindow()
 			video->BlitSprite( core->WindowFrames[2], (core->Width - core->WindowFrames[2]->Width) / 2, 0, true );
 		if (core->WindowFrames[3])
 			video->BlitSprite( core->WindowFrames[3], (core->Width - core->WindowFrames[3]->Width) / 2, core->Height - core->WindowFrames[3]->Height, true );
-	} else if (clip_regions.size()) {
-		// clip drawing (we only do Background right now) for InvalidateForControl
-		for (unsigned int i = 0; i < clip_regions.size(); i++) {
-			Region to_clip = clip_regions[i];
-			to_clip.x += XPos;
-			to_clip.y += YPos;
-			video->SetClipRect(&to_clip);
-			if (BackGround) {
-				video->BlitSprite( BackGround, XPos, YPos, true );
-			}
-		}
 	}
-	clip_regions.clear();
-	video->SetClipRect( &clip );
+
+	video->SetScreenClip( &clip );
 	//Float || Changed
+	bool bgRefreshed = false;
 	if (BackGround && (Flags & (WF_FLOAT|WF_CHANGED) ) ) {
-		video->BlitSprite( BackGround, XPos, YPos, true );
+		DrawBackground(NULL);
+		bgRefreshed = true;
 	}
+
 	std::vector< Control*>::iterator m;
 	for (m = Controls.begin(); m != Controls.end(); ++m) {
-		( *m )->Draw( XPos, YPos );
+		Control* c = *m;
+		// FIXME: drawing BG in the same loop as controls can produce incorrect results with overlapping controls. the only case I know of this occuring it is ok due to no BG drawing
+		// furthermore, overlapping controls are still a problem when NeedsDraw() returns false for the top control, but true for the bottom (see the level up icon on char portraits)
+		// we will fix both issues later by refactoring with the concept of views and subviews
+		if (BackGround && !bgRefreshed && !c->IsOpaque() && c->NeedsDraw()) {
+			const Region& fromClip = c->ControlFrame();
+			DrawBackground(&fromClip);
+		}
+		if (Flags & (WF_FLOAT)) {
+			// FIXME: this is a total hack. Required for anything drawing over GameControl (nothing really at all to do with floating)
+			c->MarkDirty();
+		}
+		c->Draw( XPos, YPos );
 	}
 	if ( (Flags&WF_CHANGED) && (Visible == WINDOW_GRAYED) ) {
 		Color black = { 0, 0, 0, 128 };
 		video->DrawRect(clip, black);
 	}
-	video->SetClipRect( NULL );
+	video->SetScreenClip( NULL );
 	Flags &= ~WF_CHANGED;
+}
+
+void Window::DrawBackground(const Region* rgn) const
+{
+	Video* video = core->GetVideoDriver();
+	if (rgn) {
+		Region toClip = *rgn;
+		toClip.x += XPos;
+		toClip.y += YPos;
+		video->BlitSprite( BackGround, *rgn, toClip);
+	} else {
+		video->BlitSprite( BackGround, XPos, YPos, true );
+	}
 }
 
 /** Set window frame used to fill screen on higher resolutions*/
@@ -253,6 +266,16 @@ Control* Window::GetControl(unsigned short i) const
 	return NULL;
 }
 
+int Window::GetControlIndex(ieDword id) const
+{
+	for (std::vector<Control*>::const_iterator m = Controls.begin(); m != Controls.end(); ++m) {
+		if ((*m)->ControlID == id) {
+			return m - Controls.begin();
+		}
+	}
+	return -1;
+}
+
 bool Window::IsValidControl(unsigned short ID, Control *ctrl) const
 {
 	size_t i = Controls.size();
@@ -264,26 +287,33 @@ bool Window::IsValidControl(unsigned short ID, Control *ctrl) const
 	return false;
 }
 
-void Window::DelControl(unsigned short i)
+Control* Window::RemoveControl(unsigned short i)
 {
 	if (i < Controls.size() ) {
 		Control *ctrl = Controls[i];
-		if (ctrl==lastC) {
-			lastC=NULL;
-		}
-		if (ctrl==lastOver) {
-			lastOver=NULL;
-		}
-		if (ctrl==lastFocus) {
-			lastFocus=NULL;
-		}
-		if (ctrl==lastMouseFocus) {
-			lastMouseFocus=NULL;
-		}
-		delete ctrl;
+		const Region& frame = ctrl->ControlFrame();
+		DrawBackground(&frame); // paint over the spot the control occupied
 		Controls.erase(Controls.begin()+i);
+		ControlRemoved(ctrl);
+		return ctrl;
 	}
-	Invalidate();
+	return NULL;
+}
+
+void Window::ControlRemoved(const Control *ctrl)
+{
+	if (ctrl == lastC) {
+		lastC = NULL;
+	}
+	if (ctrl == lastOver) {
+		lastOver = NULL;
+	}
+	if (ctrl == lastFocus) {
+		lastFocus = NULL;
+	}
+	if (ctrl == lastMouseFocus) {
+		lastMouseFocus = NULL;
+	}
 }
 
 Control* Window::GetDefaultControl(unsigned int ctrltype) const
@@ -320,56 +350,30 @@ void Window::Invalidate()
 	DefaultControl[0] = -1;
 	DefaultControl[1] = -1;
 	ScrollControl = -1;
-	for (unsigned int i = 0; i < Controls.size(); i++) {
-		if (!Controls[i]) {
-			continue;
-		}
-		Controls[i]->MarkDirty();
-		switch (Controls[i]->ControlType) {
+	unsigned int i = 0;
+	for (std::vector<Control*>::iterator m = Controls.begin(); m != Controls.end(); ++m, ++i) {
+		Control *ctrl = *m;
+		ctrl->MarkDirty();
+		switch (ctrl->ControlType) {
 			case IE_GUI_SCROLLBAR:
-				if ((ScrollControl == -1) || (Controls[i]->Flags & IE_GUI_SCROLLBAR_DEFAULT))
+				if ((ScrollControl == -1) || (ctrl->Flags & IE_GUI_SCROLLBAR_DEFAULT))
 					ScrollControl = i;
 				break;
 			case IE_GUI_BUTTON:
-				if (( Controls[i]->Flags & IE_GUI_BUTTON_DEFAULT )) {
+				if (ctrl->Flags & IE_GUI_BUTTON_DEFAULT) {
 					DefaultControl[0] = i;
 				}
-				if (( Controls[i]->Flags & IE_GUI_BUTTON_CANCEL )) {
+				if (ctrl->Flags & IE_GUI_BUTTON_CANCEL) {
 					DefaultControl[1] = i;
 				}
 				break;
-				//falling through
 			case IE_GUI_GAMECONTROL:
-				DefaultControl[0] = i;
-				DefaultControl[1] = i;
+				DefaultControl[0] = DefaultControl[1] = i;
 				break;
 			default: ;
 		}
 	}
 	Flags |= WF_CHANGED;
-}
-
-/** Redraw enough to update the specified Control */
-void Window::InvalidateForControl(Control *ctrl) {
-	// TODO: for this to be general-purpose, we should mark anything inside this
-	// region with Changed, and also do mass Invalidate() if we overlap with
-	// another window, but for now this just clips the *background*, see DrawWindow()
-	Region ctrlFrame = ctrl->ControlFrame();
-	std::vector<Region>::iterator it;
-	for (it = clip_regions.begin(); it != clip_regions.end(); ++it) {
-		Region& r = *it;
-		if (r.InsideRegion(ctrlFrame)) {
-			*it = ctrlFrame;
-			break;
-		} else if (ctrlFrame.InsideRegion(r)) {
-			// already have a rect larger
-			break;
-		}
-	}
-	if (it == clip_regions.end()) {
-		// made it to the end of the list, so we didnt find a match.
-		clip_regions.push_back(ctrlFrame);
-	}
 }
 
 void Window::RedrawControls(const char* VarName, unsigned int Sum)
@@ -395,15 +399,17 @@ void Window::Link(unsigned short SBID, unsigned short TAID)
 					break;
 			}
 		} else if (( *m )->ControlType == IE_GUI_TEXTAREA) {
-			if (( *m )->ControlID == TAID) {
+			if (( *m )->ControlID == TAID || TAID == (ieWord)-1) {
 				ta = ( TextArea * ) ( *m );
 				if (sb != NULL)
 					break;
 			}
 		}
 	}
-	if (sb && ta) {
+	if (sb) {
 		sb->ta = ta;
+	}
+	if (ta) {
 		ta->SetScrollBar( sb );
 	}
 }

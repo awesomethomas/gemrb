@@ -21,7 +21,7 @@ their own files. User specific configuration is in other file (GemRB.cfg).
 Options that do not deal strictly with data availability and diversity
 may be freely changed. Some that may be interesting to users include:
 AutoSearchHidden, BreakableWeapons, DeathOnZeroStat,
-HasSpecificDamageBonus (mod required), HasWisdomBonusTable (mod required),
+HasSpecificDamageBonus (mod required), SimplifiedDisruption,
 HealOn100Plus, KnowWorld, ProperBackstab, SelectiveMagicRes, StealIsAttack
  and TeamMovement.
 
@@ -80,6 +80,10 @@ ButtonFont = <resref>
 Name of bitmap resource used for button font in dialog windows
 (e.g. BG1: STONESML)
 
+TextFont = <resref>
+- - - - - - - - - - -
+Font used to display overhead or floating text
+
 MovieFont = <resref>
 - - - - - - - - - - -
 Name of bitmap resource used for the movie subtitles
@@ -95,11 +99,6 @@ TooltipBack = <resref>
 Sprite displayed behind the tooltip text, if any. Leave undefined when
 tooltips don't use background bitmap.
 (e.g. BG1: TOOLTIP)
-
-
-TooltipColor = <rgba_color>
-- - - - - - - - - - - - - -
-Tooltip text color. Default is #ffffffff, i.e. opaque white.
 
 
 TooltipMargin = <number>
@@ -362,12 +361,6 @@ HasUsePointFlag = <bool>
 Detail about how infopoints react when used (iwd2).
 
 
-HasWisdomBonusTable = <bool>
-- - - - - - - - - - - - - - -
-Toggles whether the game has a wisxpbon.2da that dictates a bonus or malus
-to gained experience according to the actor's wisdom (pst).
-
-
 IgnoreButtonFrames = <bool>
 - - - - - - - - - - - - - -
 If set to 1, buttons will ignore frame numbers as set in button CHU
@@ -518,6 +511,12 @@ SelectiveMagicRes = <bool>
 - - - - - - - - - - - -
 Determines whether the magic resistance applies to all effects, even the
 beneficial ones.
+
+
+SimplifiedDisruption = <bool>
+- - - - - - - - - - - - - - -
+Use the ToBEx simplified "concentration" checks, ie. damage only disrupts
+casting if enough was made ([1D20 + luck] < [spell level + damage taken]).
 
 
 SkipUpdateHack = <bool>

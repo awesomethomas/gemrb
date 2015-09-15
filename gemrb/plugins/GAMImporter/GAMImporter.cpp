@@ -43,6 +43,11 @@ using namespace GemRB;
 GAMImporter::GAMImporter(void)
 {
 	str = NULL;
+	version = PCSize = PCOffset = PCCount = 0;
+	MazeOffset = NPCOffset = NPCCount = GlobalOffset = GlobalCount = 0;
+	JournalOffset = JournalCount = KillVarsOffset = KillVarsCount = 0;
+	FamiliarsOffset = SavedLocOffset = SavedLocCount = 0;
+	PPLocOffset = PPLocCount = 0;
 }
 
 GAMImporter::~GAMImporter(void)
@@ -353,7 +358,7 @@ Actor* GAMImporter::GetActor(Holder<ActorMgr> aM, bool is_in_party )
 	str->ReadWord( &pcInfo.ViewYPos );
 	str->ReadWord( &pcInfo.ModalState ); //see Modal.ids
 	str->ReadWord( &pcInfo.Happiness );
-	for (i=0;i<24;i++) {
+	for (i=0; i<MAX_INTERACT; i++) {
 		str->ReadDword( &pcInfo.Interact[i] ); //interact counters
 	}
 
@@ -917,7 +922,7 @@ int GAMImporter::PutActor(DataStream *stream, Actor *ac, ieDword CRESize, ieDwor
 	tmpWord = ac->PCStats->Happiness;
 	stream->WriteWord( &tmpWord);
 	//interact counters
-	for (i=0;i<24;i++) {
+	for (i=0; i<MAX_INTERACT; i++) {
 		stream->WriteDword( ac->PCStats->Interact+i);
 	}
 
@@ -1012,7 +1017,7 @@ int GAMImporter::PutActor(DataStream *stream, Actor *ac, ieDword CRESize, ieDwor
 	if (ac->LongStrRef==0xffffffff) {
 		strncpy(filling, ac->LongName, 32);
 	} else {
-		char *tmpstr = core->GetString(ac->LongStrRef, IE_STR_STRREFOFF);
+		char *tmpstr = core->GetCString(ac->LongStrRef, IE_STR_STRREFOFF);
 		strncpy(filling, tmpstr, 32);
 		core->FreeString( tmpstr );
 	}

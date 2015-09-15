@@ -26,7 +26,6 @@ import GemRB
 from GUIDefines import *
 from ie_stats import *
 from ie_spells import LS_MEMO
-import GameCheck
 import GUICommon
 import Spellbook
 import CommonTables
@@ -317,7 +316,7 @@ def AcceptPress():
 	KitIndex = KitTable.FindValue (3, Kit)
 	ClassName = GUICommon.GetClassRowName (MyChar)
 	t = GemRB.GetPlayerStat (MyChar, IE_ALIGNMENT)
-	TableName = CommonTables.ClassSkills.GetValue (ClassName, "MAGESPELL", 0)
+	TableName = CommonTables.ClassSkills.GetValue (ClassName, "MAGESPELL", GTV_STR)
 	if TableName != "*":
 		#todo: set up ALL spell levels not just level 1
 		Spellbook.SetupSpellLevels (MyChar, TableName, IE_SPELL_TYPE_WIZARD, 1)
@@ -335,10 +334,10 @@ def AcceptPress():
 			j=j<<1
 
 	#priest spells
-	TableName = CommonTables.ClassSkills.GetValue (ClassName, "CLERICSPELL", 0)
+	TableName = CommonTables.ClassSkills.GetValue (ClassName, "CLERICSPELL", GTV_STR)
 	# druids and rangers have a column of their own
 	if TableName == "*":
-		TableName = CommonTables.ClassSkills.GetValue (ClassName, "DRUIDSPELL", 0)
+		TableName = CommonTables.ClassSkills.GetValue (ClassName, "DRUIDSPELL", GTV_STR)
 	if TableName != "*":
 		if TableName == "MXSPLPRS" or TableName == "MXSPLPAL":
 			ClassFlag = 0x8000
@@ -441,7 +440,7 @@ def SetCharacterDescription():
 		TextArea.Append (1047)
 		TextArea.Append (": ")
 		TextArea.Append (GemRB.GetToken ("CHARNAME"))
-		TextArea.Append ("", -1)
+		TextArea.Append ("\n")
 	if CharGenState > 0:
 		TextArea.Append (12135)
 		TextArea.Append (": ")
@@ -449,9 +448,10 @@ def SetCharacterDescription():
 			TextArea.Append (1050)
 		else:
 			TextArea.Append (1051)
+		TextArea.Append ("\n")
 	if CharGenState > 2:
 		ClassName = GUICommon.GetClassRowName (MyChar)
-		TextArea.Append (12136, -1)
+		TextArea.Append (12136)
 		TextArea.Append (": ")
 		#this is only mage school in iwd
 		Kit = GemRB.GetPlayerStat (MyChar, IE_KIT)
@@ -461,23 +461,26 @@ def SetCharacterDescription():
 		else:
 			ClassTitle = KitTable.GetValue (KitIndex, 2)
 		TextArea.Append (ClassTitle)
+		TextArea.Append ("\n")
 
 	if CharGenState > 1:
-		TextArea.Append (1048, -1)
+		TextArea.Append (1048)
 		TextArea.Append (": ")
 		Race = GemRB.GetPlayerStat (MyChar, IE_RACE)
 		Race = CommonTables.Races.FindValue (3, GemRB.GetPlayerStat (MyChar, IE_RACE) )
 		TextArea.Append (CommonTables.Races.GetValue (Race, 2) )
+		TextArea.Append ("\n")
 	if CharGenState > 3:
-		TextArea.Append (1049, -1)
+		TextArea.Append (1049)
 		TextArea.Append (": ")
 		Alignment = CommonTables.Aligns.FindValue (3, GemRB.GetPlayerStat(MyChar, IE_ALIGNMENT))
 		TextArea.Append (CommonTables.Aligns.GetValue (Alignment, 2))
+		TextArea.Append ("\n")
 	if CharGenState > 4:
 		strextra = GemRB.GetPlayerStat (MyChar, IE_STREXTRA)
-		TextArea.Append ("", -1)
+		TextArea.Append ("\n")
 		for i in range (6):
-			TextArea.Append (AbilitiesTable.GetValue (i, 2), -1)
+			TextArea.Append (AbilitiesTable.GetValue (i, 2))
 			TextArea.Append (": " )
 			StatID = AbilitiesTable.GetValue (i, 3)
 			stat = GemRB.GetPlayerStat (MyChar, StatID)
@@ -485,6 +488,7 @@ def SetCharacterDescription():
 				TextArea.Append (str(stat) + "/" + str(strextra) )
 			else:
 				TextArea.Append (str(stat) )
+			TextArea.Append ("\n")
 	if CharGenState > 5:
 		DruidSpell = CommonTables.ClassSkills.GetValue (ClassName, "DRUIDSPELL")
 		PriestSpell = CommonTables.ClassSkills.GetValue (ClassName, "CLERICSPELL")
@@ -493,59 +497,65 @@ def SetCharacterDescription():
 		IsThief = CommonTables.ClassSkills.GetValue (ClassName, "THIEFSKILL")
 
 		if IsThief!="*":
-			TextArea.Append ("", -1)
-			TextArea.Append (8442, -1)
+			TextArea.Append ("\n")
+			TextArea.Append (8442)
+			TextArea.Append ("\n")
 			for i in range (4):
-				TextArea.Append (SkillsTable.GetValue (i+2, 2), -1)
+				TextArea.Append (SkillsTable.GetValue (i+2, 2))
 				StatID = SkillsTable.GetValue (i+2, 3)
 				TextArea.Append (": " )
 				TextArea.Append (str(GemRB.GetPlayerStat (MyChar, StatID)) )
-				TextArea.Append ("%" )
+				TextArea.Append ("%\n")
 		elif DruidSpell!="*":
-			TextArea.Append ("", -1)
-			TextArea.Append (8442, -1)
+			TextArea.Append ("\n")
+			TextArea.Append (8442)
+			TextArea.Append ("\n")
 			for i in range (4):
 				StatID = SkillsTable.GetValue (i+2, 3)
 				Stat = GemRB.GetPlayerStat (MyChar, StatID)
 				if Stat>0:
-					TextArea.Append (SkillsTable.GetValue (i+2, 2), -1)
+					TextArea.Append (SkillsTable.GetValue (i+2, 2))
 					TextArea.Append (": " )
 					TextArea.Append (str(Stat) )
-					TextArea.Append ("%" )
-			TextArea.Append ("", -1)
-			TextArea.Append (15982, -1)
+					TextArea.Append ("%\n")
+			TextArea.Append ("\n")
+			TextArea.Append (15982)
 			TextArea.Append (": " )
 			RacialEnemy = GemRB.GetVar ("RacialEnemyIndex") + GemRB.GetVar ("RacialEnemy") - 1
 			TextArea.Append (RacialEnemyTable.GetValue (RacialEnemy, 3) )
+			TextArea.Append ("\n")
 		elif IsBard!="*":
-			TextArea.Append ("", -1)
-			TextArea.Append (8442, -1)
+			TextArea.Append ("\n")
+			TextArea.Append (8442)
+			TextArea.Append ("\n")
 			for i in range (4):
 				StatID = SkillsTable.GetValue (i+2, 3)
 				Stat = GemRB.GetPlayerStat (MyChar, StatID)
 				if Stat>0:
-					TextArea.Append (SkillsTable.GetValue (i+2, 2), -1)
+					TextArea.Append (SkillsTable.GetValue (i+2, 2))
 					TextArea.Append (": " )
 					TextArea.Append (str(Stat) )
-					TextArea.Append ("%" )
+					TextArea.Append ("%\n")
 
-		TextArea.Append ("", -1)
-		TextArea.Append (9466, -1)
+		TextArea.Append ("\n")
+		TextArea.Append (9466)
+		TextArea.Append ("\n")
 		for i in range (15):
 			StatID = ProficienciesTable.GetValue (i, 0)
 			ProficiencyValue = GemRB.GetPlayerStat (MyChar, StatID )
 			if ProficiencyValue > 0:
-				TextArea.Append (ProficienciesTable.GetValue (i, 3), -1)
+				TextArea.Append (ProficienciesTable.GetValue (i, 3))
 				TextArea.Append (" ")
 				j = 0
 				while j < ProficiencyValue:
 					TextArea.Append ("+")
 					j = j + 1
+				TextArea.Append ("\n")
 
 		if MageSpell !="*":
-			TextArea.Append ("", -1)
-			TextArea.Append (11027, -1)
-			TextArea.Append (": " )
+			TextArea.Append ("\n")
+			TextArea.Append (11027)
+			TextArea.Append (":\n")
 			t = GemRB.GetPlayerStat (MyChar, IE_ALIGNMENT)
 			Learnable = Spellbook.GetLearnableMageSpells (GemRB.GetPlayerStat (MyChar, IE_KIT), t,1)
 			MageSpellBook = GemRB.GetVar ("MageSpellBook")
@@ -553,17 +563,17 @@ def SetCharacterDescription():
 			for i in range (len(Learnable)):
 				if (1 << i) & MageSpellBook:
 					Spell = GemRB.GetSpell (Learnable[i])
-					TextArea.Append (Spell["SpellName"], -1)
+					TextArea.Append (Spell["SpellName"])
 					if (1 << i) & MageMemorized:
 						TextArea.Append (" +")
-					TextArea.Append (" ")
+					TextArea.Append ("\n")
 
 		if PriestSpell == "*":
 			PriestSpell = DruidSpell
 		if PriestSpell!="*":
-			TextArea.Append ("", -1)
-			TextArea.Append (11028, -1)
-			TextArea.Append (": " )
+			TextArea.Append ("\n")
+			TextArea.Append (11028)
+			TextArea.Append (":\n")
 			t = GemRB.GetPlayerStat (MyChar, IE_ALIGNMENT)
 			if PriestSpell == "MXSPLPRS" or PriestSpell == "MXSPLPAL":
 				ClassFlag = 0x4000
@@ -577,8 +587,8 @@ def SetCharacterDescription():
 			for i in range (len(Learnable)):
 				if (1 << i) & PriestMemorized:
 					Spell = GemRB.GetSpell (Learnable[i])
-					TextArea.Append (Spell["SpellName"], -1)
-					TextArea.Append (" +")
+					TextArea.Append (Spell["SpellName"])
+					TextArea.Append (" +\n")
 	return
 
 
@@ -819,14 +829,14 @@ def PortraitCustomPress():
 
 	CustomWindow = Window = GemRB.LoadWindow (18)
 	PortraitList1 = Window.GetControl (2)
-	RowCount1 = PortraitList1.GetPortraits (0)
-	PortraitList1.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, CGLargeCustomPortrait)
+	RowCount1 = PortraitList1.ListResources (CHR_PORTRAITS, 0)
+	PortraitList1.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, CGLargeCustomPortrait)
 	GemRB.SetVar ("Row1", RowCount1)
 	PortraitList1.SetVarAssoc ("Row1",RowCount1)
 
 	PortraitList2 = Window.GetControl (4)
-	RowCount2 = PortraitList2.GetPortraits (1)
-	PortraitList2.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, CGSmallCustomPortrait)
+	RowCount2 = PortraitList2.ListResources (CHR_PORTRAITS, 1)
+	PortraitList2.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, CGSmallCustomPortrait)
 	GemRB.SetVar ("Row2", RowCount2)
 	PortraitList2.SetVarAssoc ("Row2",RowCount2)
 
@@ -2377,7 +2387,7 @@ def DrawAvatar():
 	lookup = GUICommon.GetClassRowName (MyChar)
 	AvatarID = AvatarID+table.GetValue (lookup, "PREFIX")
 	table = GemRB.LoadTable ("avprefg")
-	AvatarID = AvatarID+table.GetValue (GemRB.GetPlayerStat(MyChar,IE_SEX),0)
+	AvatarID = AvatarID + table.GetValue (GemRB.GetPlayerStat(MyChar,IE_SEX), GTV_STR)
 
 	AvatarRef = CommonTables.Pdolls.GetValue (hex(AvatarID), "LEVEL1")
 	AppearanceAvatarButton.SetPLT(AvatarRef, 0, MinorColor, MajorColor, SkinColor, 0, 0, HairColor, 0)
@@ -2486,8 +2496,7 @@ def CharSoundSelect():
 
 	VerbalConstants =  [CharSoundTable.GetRowName(i) for i in range(CharSoundTable.GetRowCount())]
 	CharSoundVoiceList = CharSoundWindow.GetControl (45)
-	CharSoundVoiceList.SetFlags (IE_GUI_TEXTAREA_SELECTABLE)
-	RowCount=CharSoundVoiceList.GetCharSounds()
+	RowCount=CharSoundVoiceList.ListResources(CHR_SOUNDS)
 
 	CharSoundPlayButton = CharSoundWindow.GetControl (47)
 	CharSoundPlayButton.SetState (IE_GUI_BUTTON_ENABLED)
@@ -2559,7 +2568,8 @@ def BiographyPress():
 	CharGenWindow.SetVisible (WINDOW_INVISIBLE)
 	BiographyWindow = GemRB.LoadWindow (51)
 	BiographyField = BiographyWindow.GetControl (4)
-	BiographyField = BiographyField.ConvertEdit (3)
+	BiographyTextArea = BiographyWindow.CreateTextArea(100, 0, 0, 0, 0, "NORMAL", IE_FONT_ALIGN_CENTER) # ID/position/size dont matter. we will substitute later
+	BiographyField = BiographyTextArea.SubstituteForControl(BiographyField)
 	BiographyField.SetStatus (IE_GUI_CONTROL_FOCUSED)
 
 	BIO = GemRB.GetToken("Biography")
@@ -2604,7 +2614,18 @@ def BiographyCancelPress():
 def BiographyDonePress():
 	global CharGenWindow, BiographyWindow, BiographyField
 
-	GemRB.SetToken ("Biography", BiographyField.QueryText () )
+	BIO = BiographyField.QueryText ()
+	GemRB.SetToken ("Biography", BIO) # just for any window reopens
+	BioStrRefSlot = 63
+	DefaultBIO = 19423
+	if BIO == GemRB.GetString (DefaultBIO):
+		GemRB.SetPlayerString (MyChar, BioStrRefSlot, DefaultBIO)
+	else:
+		# unlike tob, iwd has no marked placeholders (or strings) at 62015; but we have special magic in place ...
+		# still, use the returned strref in case anything unexpected happened
+		ref = GemRB.CreateString (62015+MyChar, BIO)
+		GemRB.SetPlayerString (MyChar, BioStrRefSlot, ref)
+
 	if BiographyWindow:
 		BiographyWindow.Unload ()
 	CharGenWindow.SetVisible (WINDOW_VISIBLE)
@@ -2684,9 +2705,8 @@ def ImportPress():
 
 	GemRB.SetVar ("Selected", 0)
 	CharImportList = ImportWindow.GetControl(2)
-	CharImportList.SetFlags (IE_GUI_TEXTAREA_SELECTABLE)
 	CharImportList.SetVarAssoc ("Selected",0)
-	CharImportList.GetCharacters()
+	CharImportList.ListResources(CHR_EXPORTS)
 
 	ImportDoneButton = ImportWindow.GetControl (0)
 	ImportDoneButton.SetState (IE_GUI_BUTTON_ENABLED)

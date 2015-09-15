@@ -876,13 +876,7 @@ bool Inventory::ChangeItemFlag(ieDword slot, ieDword arg, int op)
 	if (!item) {
 		return false;
 	}
-	switch (op) {
-	case BM_SET: item->Flags = arg; break;
-	case BM_OR: item->Flags |= arg; break;
-	case BM_NAND: item->Flags &= ~arg; break;
-	case BM_XOR: item->Flags ^= arg; break;
-	case BM_AND: item->Flags &= arg; break;
-	}
+	core->SetBits(item->Flags, arg, op);
 	return true;
 }
 
@@ -1224,7 +1218,7 @@ bool Inventory::SetEquippedSlot(ieWordSigned slotcode, ieWord header)
 	EquippedHeader = header;
 
 	//doesn't work if magic slot is used, refresh the magic slot just in case
-	if (HasItemInSlot("",SLOT_MAGIC) && (slotcode!=SLOT_MAGIC-SLOT_MELEE)) {
+	if (MagicSlotEquipped() && (slotcode!=SLOT_MAGIC-SLOT_MELEE)) {
 		Equipped = SLOT_MAGIC-SLOT_MELEE;
 		UpdateWeaponAnimation();
 		return false;
@@ -1291,10 +1285,34 @@ int Inventory::GetEquippedHeader() const
 	return EquippedHeader;
 }
 
+// store this internally just like Equipped/EquippedHeader if it turns into a hot path
+ITMExtHeader *Inventory::GetEquippedExtHeader(int header) const
+{
+	int slot; // Equipped holds the projectile, not the weapon
+	CREItem *itm = GetUsedWeapon(false, slot); // check the main hand only
+	if (!itm) return NULL;
+	Item *item = gamedata->GetItem(itm->ItemResRef, true);
+	if (!item) return NULL;
+	return item->GetExtHeader(header);
+}
+
 void Inventory::SetEquipped(ieWordSigned slot, ieWord header)
 {
 	Equipped = slot;
 	EquippedHeader = header;
+}
+
+bool Inventory::FistsEquipped() const
+{
+	return Equipped == IW_NO_EQUIPPED;
+}
+
+bool Inventory::MagicSlotEquipped() const
+{
+	if (SLOT_MAGIC != -1) {
+		return Slots[SLOT_MAGIC] != NULL;
+	}
+	return false;
 }
 
 //returns the fist weapon if there is nothing else
@@ -1484,7 +1502,7 @@ void Inventory::dump(StringBuffer& buffer) const
 		buffer.appendFormatted( "%2u: %8.8s - (%d %d %d) Fl:0x%x Wt: %d x %dLb\n", i, itm->ItemResRef, itm->Usages[0], itm->Usages[1], itm->Usages[2], itm->Flags, itm->MaxStackAmount, itm->Weight );
 	}
 
-	buffer.appendFormatted( "Equipped: %d\n", Equipped );
+	buffer.appendFormatted("Equipped: %d       EquippedHeader: %d\n", Equipped, EquippedHeader);
 	Changed = true;
 	CalculateWeight();
 	buffer.appendFormatted( "Total weight: %d\n", Weight );
@@ -1620,6 +1638,7 @@ bool Inventory::GetEquipmentInfo(ItemExtHeader *array, int startindex, int count
 				memcpy(array[pos].itemname, slot->ItemResRef, sizeof(ieResRef) );
 				array[pos].slot = idx;
 				array[pos].headerindex = ehc;
+				array[pos].Tooltip = ext_header->Tooltip;
 				int slen = ((char *) &(array[pos].itemname)) -((char *) &(array[pos].AttackType));
 				memcpy(&(array[pos].AttackType), &(ext_header->AttackType), slen);
 				if (ext_header->Charges) {
@@ -1711,6 +1730,7 @@ void Inventory::UpdateWeaponAnimation()
 			}
 			if (si) {
 				Item* it = gamedata->GetItem(si->ItemResRef, true);
+				assert(it);
 				if (core->CanUseItemType(SLOT_WEAPON, it))
 					twoweapon = true;
 				gamedata->FreeItem(it, si->ItemResRef, false);
@@ -1764,7 +1784,7 @@ int Inventory::WhyCantEquip(int slot, int twohanded) const
 	}
 
 	//magic items have the highest priority
-	if ( HasItemInSlot("", SLOT_MAGIC)) {
+	if (MagicSlotEquipped()) {
 		//magic weapon is in use
 		return STR_MAGICWEAPON;
 	}

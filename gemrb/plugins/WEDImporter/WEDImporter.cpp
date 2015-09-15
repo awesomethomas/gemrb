@@ -50,6 +50,11 @@ struct wed_polygon {
 WEDImporter::WEDImporter(void)
 {
 	str = NULL;
+	OverlaysCount = DoorsCount = OverlaysOffset = SecHeaderOffset = 0;
+	DoorPolygonsCount = DoorsOffset = DoorTilesOffset = PILTOffset = 0;
+	WallPolygonsCount = PolygonsOffset = VerticesOffset = WallGroupsOffset = 0;
+	OpenPolyCount = ClosedPolyCount = OpenPolyOffset = ClosedPolyOffset = 0;
+	ExtendedNight = false;
 }
 
 WEDImporter::~WEDImporter(void)
@@ -95,6 +100,7 @@ bool WEDImporter::Open(DataStream* stream)
 	str->ReadDword( &VerticesOffset );
 	str->ReadDword( &WallGroupsOffset );
 	str->ReadDword( &PILTOffset );
+	ExtendedNight = false;
 	return true;
 }
 
@@ -103,36 +109,46 @@ int WEDImporter::AddOverlay(TileMap *tm, Overlay *overlays, bool rain)
 	ieResRef res;
 	int usedoverlays = 0;
 
-	memcpy(res, overlays->TilesetResRef,sizeof(ieResRef));
-	if (rain) {
-		if (strlen(res) < 8)
-			strcat(res,"R");
-		//no rain tileset available, rolling back
-		if (!gamedata->Exists(res,IE_TIS_CLASS_ID)) {
-			memcpy(res, overlays->TilesetResRef,sizeof(ieResRef));
+	memcpy(res, overlays->TilesetResRef, sizeof(ieResRef));
+	int len = strlen(res);
+	// in BG1 extended night WEDs alway reference the day TIS instead of the matching night TIS
+	if (ExtendedNight && len == 6) {
+		strcat(res, "N");
+		if (!gamedata->Exists(res, IE_TIS_CLASS_ID)) {
+			res[len] = '\0';
+		} else {
+			len++;
 		}
 	}
-	TileOverlay *over = new TileOverlay( overlays->Width, overlays->Height );
+	if (rain && len < 8) {
+		strcat(res, "R");
+		//no rain tileset available, rolling back
+		if (!gamedata->Exists(res, IE_TIS_CLASS_ID)) {
+			res[len] = '\0';
+		}
+	}
 	DataStream* tisfile = gamedata->GetResource(res, IE_TIS_CLASS_ID);
 	if (!tisfile) {
-		delete over;
 		return -1;
 	}
 	PluginHolder<TileSetMgr> tis(IE_TIS_CLASS_ID);
 	tis->Open( tisfile );
+	TileOverlay *over = new TileOverlay( overlays->Width, overlays->Height );
 	for (int y = 0; y < overlays->Height; y++) {
 		for (int x = 0; x < overlays->Width; x++) {
 			str->Seek( overlays->TilemapOffset +
 				( y * overlays->Width + x) * 10,
 				GEM_STREAM_START );
 			ieWord startindex, count, secondary;
-			ieByte overlaymask;
+			ieByte overlaymask, animspeed;
 			str->ReadWord( &startindex );
 			str->ReadWord( &count );
-			//should be always 0xffff
 			str->ReadWord( &secondary );
-			//should be always 0
 			str->Read( &overlaymask, 1 );
+			str->Read( &animspeed, 1 );
+			if (animspeed == 0) {
+				animspeed = ANI_DEFAULT_FRAMERATE;
+			}
 			str->Seek( overlays->TILOffset + ( startindex * 2 ),
 				GEM_STREAM_START );
 			ieWord* indices = ( ieWord* ) calloc( count, sizeof(ieWord) );
@@ -145,7 +161,9 @@ int WEDImporter::AddOverlay(TileMap *tm, Overlay *overlays, bool rain)
 				tile = tis->GetTile( indices, count );
 			} else {
 				tile = tis->GetTile( indices, 1, &secondary );
+				tile->anim[1]->fps = animspeed;
 			}
+			tile->anim[0]->fps = animspeed;
 			tile->om = overlaymask;
 			usedoverlays |= overlaymask;
 			over->AddTile( tile );
@@ -184,8 +202,6 @@ TileMap* WEDImporter::GetTileMap(TileMap *tm)
 		return NULL;
 	}
 	// rain_overlays[0] is never used
-	// XXX: should fix AddOverlay not to load an overlay twice if there's no rain version!!
-	//AddOverlay(tm, &overlays.at(0), true);
 	tm->AddRainOverlay( NULL );
 
 	//reading additional overlays
@@ -195,13 +211,12 @@ TileMap* WEDImporter::GetTileMap(TileMap *tm)
 		if (!(mask&usedoverlays)) {
 			tm->AddOverlay( NULL );
 			tm->AddRainOverlay( NULL );
-			mask<<=1;
-			continue;
+		} else {
+			// XXX: should fix AddOverlay not to load an overlay twice if there's no rain version!!
+			AddOverlay(tm, &overlays.at(i), false);
+			AddOverlay(tm, &overlays.at(i), true);
 		}
 		mask<<=1;
-
-		AddOverlay(tm, &overlays.at(i), false);
-		AddOverlay(tm, &overlays.at(i), true);
 	}
 	return tm;
 }
@@ -269,11 +284,7 @@ ieWord* WEDImporter::GetDoorIndices(char* ResRef, int* count, bool& BaseClosed)
 		swab( (char*) DoorTiles, (char*) DoorTiles, DoorTileCount * sizeof( ieWord) );
 	}
 	*count = DoorTileCount;
-	if (DoorClosed) {
-		BaseClosed = true;
-	} else {
-		BaseClosed = false;
-	}
+	BaseClosed = DoorClosed != 0;
 	return DoorTiles;
 }
 

@@ -29,6 +29,7 @@ from ie_modal import *
 from ie_action import *
 from ie_slots import SLOT_QUIVER
 from ie_restype import RES_2DA
+from GameCheck import PARTY_SIZE
 import GameCheck
 import GUICommon
 import CommonTables
@@ -60,9 +61,12 @@ CurrentWindow = None
 DraggedPortrait = None
 ActionBarControlOffset = 0
 ReturnToGame = None
+ScreenHeight = GemRB.GetSystemVariable (SV_HEIGHT)
+PortraitButtons = None
 
 #The following tables deal with the different control indexes and string refs of each game
 #so that actual interface code can be game neutral
+AITip = {"Deactivate" : 15918, "Enable" : 15917}
 if GameCheck.IsPST(): #Torment
 	import GUIClasses
 	TimeWindow = None
@@ -88,12 +92,11 @@ elif GameCheck.IsIWD2(): #Icewind Dale 2
 	}
 	OptionControl = {
 	'Inventory' : 5, 'Map' : 7, 'Mage': 5, 'Priest': 6, 'Stats': 8, 'Journal': 6,
-	'Options' : 9, 'Rest': 12, 'Follow': 0, 'Expand': 10, 'AI': 6,
+	'Options' : 9, 'Rest': 12, 'Follow': 0, 'Expand': 10, 'AI': 14,
 	'Game': 0, 'Party' : 13,  'Time': 10, #not in pst
 	'SpellBook': 4, 'SelectAll': 11
 	}
 else: # Baldurs Gate, Icewind Dale
-	AITip = {"Deactivate" : 15918, "Enable" : 15917}
 	OptionTip = {
 	'Inventory' : 16307, 'Map': 16310, 'Mage': 16309, 'Priest': 14930, 'Stats': 16306, 'Journal': 16308,
 	'Options' : 16311, 'Rest': 11942, 'Follow': 41647,  'Expand': 41660, 'AI' : 1, 'Game' : 16313, 'Party' : 16312
@@ -139,12 +142,15 @@ def SetupMenuWindowControls (Window, Gears=None, CloseWindowCallback=None):
 
 	if iwd2: # IWD2 has one spellbook to rule them all
 		ActionBarControlOffset = 6 #portrait and action window were merged
-		# Spellbook
-		Button = InitOptionButton(Window, 'SpellBook', GUISPL.OpenSpellBookWindow)
-		if Gears: # todo: don't know if it needs this if or if it's if'fing around
-			# Select All
-			Button = InitOptionButton(Window, 'SelectAll', GUICommon.SelectAllOnPress)
 
+		Button = InitOptionButton(Window, 'SpellBook', GUISPL.OpenSpellBookWindow)
+
+		# AI
+		Button = InitOptionButton(Window, 'AI', AIPress)
+		AIPress (0) #this initialises the state and tooltip
+
+		# Select All
+		Button = InitOptionButton(Window, 'SelectAll', GUICommon.SelectAllOnPress)
 	elif pst: #pst has these three controls here instead of portrait pane
 		# (Un)Lock view on character
 		Button = InitOptionButton(Window, 'Follow', OnLockViewPress)  # or 41648 Unlock ...
@@ -232,11 +238,11 @@ def SetupMenuWindowControls (Window, Gears=None, CloseWindowCallback=None):
 		# Pendulum, gears, sun/moon dial (time)
 		# FIXME: display all animations: CPEN, CGEAR, CDIAL
 		if how: # how doesn't have this in the right place
-			pos = GemRB.GetSystemVariable (SV_HEIGHT)-71
+			pos = ScreenHeight - 71
 			Window.CreateButton (OptionControl['Time'], 6, pos, 64, 71)
 		Button = Window.GetControl (OptionControl['Time'])
 		if bg2:
-			Label = Button.CreateLabelOnButton (0x10000009, "NORMAL", 0)
+			Label = Button.CreateLabelOnButton (0x10000009, "NORMAL", IE_FONT_SINGLE_LINE)
 			Label.SetAnimation ("CPEN")
 
 		Button.SetAnimation ("CGEAR")
@@ -329,7 +335,7 @@ def PortraitPress (): #not used in pst. TODO:make an enhancement option?
 def AIPress (toggle=1):
 	"""Toggles the party AI or refreshes the button state if toggle = 0"""
 
-	if GameCheck.IsPST():
+	if GameCheck.IsPST() or GameCheck.IsIWD2():
 		Button = OptionsWindow.GetControl (OptionControl['AI'])
 	else:
 		Button = PortraitWindow.GetControl (OptionControl['AI'])
@@ -435,7 +441,7 @@ def OpenActionsWindowControls (Window): #FIXME:unused in pst. one day could be?
 		return
 	# Gears (time) when options pane is down
 	Button = Window.GetControl (62)
-	Label = Button.CreateLabelOnButton (0x1000003e, "NORMAL", 0)
+	Label = Button.CreateLabelOnButton (0x1000003e, "NORMAL", IE_FONT_SINGLE_LINE)
 
 	# FIXME: display all animations
 	Label.SetAnimation ("CPEN")
@@ -577,27 +583,12 @@ def SetupItemAbilities(pc, slot):
 		UpdateActionsWindow ()
 	return
 
- #only in iwd2? could be exported...
-def SetupBookSelection ():
-	for i in range (12):
-		Button = CurrentWindow.GetControl (i+ActionBarControlOffset)
-		Button.SetActionIcon (globals(), 50+i)
-	return
-
 #you can change this for custom skills, this is the original engine
 skillbar=(ACT_STEALTH, ACT_SEARCH, ACT_THIEVING, ACT_WILDERNESS, ACT_TAMING, 100, 100, 100, 100, 100, 100, 100)
 def SetupSkillSelection ():
 	pc = GemRB.GameGetFirstSelectedActor ()
 	CurrentWindow.SetupControls( globals(), pc, ActionBarControlOffset, skillbar)
 	return
-
-########################
-
-#None of the following functions are implemented yet for pst (or not fully)
-#some are needed (eg stealth, innates), but some may be redundant
-#however, it would still be nice to add them via game mods for replay value
-
-########################
 
 def UpdateActionsWindow ():
 	"""Redraws the actions section of the window."""
@@ -1035,9 +1026,16 @@ def SpellShiftPressed ():
 	SpellIndex = Spell % 1000
 
 	# try spontaneous casting
-	if Type == 1<<IE_IWD2_SPELL_CLERIC and GemRB.HasResource ("sponcast", RES_2DA, 1):
-		pc = GemRB.GameGetFirstSelectedActor ()
-		SponCastTable = GemRB.LoadTable ("sponcast")
+	pc = GemRB.GameGetFirstSelectedActor ()
+	ClassRowName = GUICommon.GetClassRowName (pc)
+	SponCastTableName = CommonTables.ClassSkills.GetValue (ClassRowName, "SPONCAST")
+	if SponCastTableName != "*":
+		SponCastTable = GemRB.LoadTable (SponCastTableName, 1)
+		if not SponCastTable:
+			print "SpellShiftPressed: skipping, non-existent spontaneous casting table used! ResRef:", SponCastTableName
+			SpellPressed ()
+			return
+
 		# determine the column number (spell variety) depending on alignment
 		CureOrHarm = GemRB.GetPlayerStat (pc, IE_ALIGNMENT)
 		if CureOrHarm % 16 == 3: # evil
@@ -1045,10 +1043,17 @@ def SpellShiftPressed ():
 		else:
 			CureOrHarm = 0
 
+		# get the unshifted booktype
+		BaseType = 0
+		tmp = Type
+		while tmp > 1:
+			tmp = tmp>>1
+			BaseType += 1
+
 		# figure out the spell's details
 		# TODO: find a simpler way
 		Spell = None
-		MemorisedSpells = Spellbook.GetSpellinfoSpells(pc, IE_IWD2_SPELL_CLERIC) #FIXME: we need Type unshifted for enabling conversion of other types
+		MemorisedSpells = Spellbook.GetSpellinfoSpells (pc, BaseType)
 		for spell in MemorisedSpells:
 			if spell['SpellIndex']%(255000) == SpellIndex: # 255 is the engine value of Type
 				Spell = spell
@@ -1141,7 +1146,7 @@ def GetActorPortrait (actor, which):
 
 
 def UpdateAnimation ():
-	if not GemRB.HasResource ("ANIMS", RES_2DA):
+	if not GemRB.HasResource ("ANIMS", RES_2DA, 1):
 		# FIXME: make a simpler version for non-pst too
 		# this is a callback from the core on EF_UPDATEANIM!
 		return
@@ -1163,8 +1168,8 @@ def UpdateAnimation ():
 				animid = item["AnimationType"]
 
 	BioTable = GemRB.LoadTable ("BIOS")
-	Specific = "%d"%GemRB.GetPlayerStat (pc, IE_SPECIFIC)
-	AvatarName = BioTable.GetValue (Specific, "PC")
+	Specific = GemRB.GetPlayerStat (pc, IE_SPECIFIC)
+	AvatarName = BioTable.GetRowName (Specific+1)
 	AnimTable = GemRB.LoadTable ("ANIMS")
 	if animid=="":
 		animid="*"
@@ -1176,13 +1181,9 @@ def UpdateAnimation ():
 
 # NOTE: the following 4 functions are only used in iwd2
 def GetActorRaceTitle (actor):
-	RaceID = GemRB.GetPlayerStat (actor, IE_SUBRACE)
-	if RaceID:
-		RaceID += GemRB.GetPlayerStat (actor, IE_RACE)<<16
-	else:
-		RaceID = GemRB.GetPlayerStat (actor, IE_RACE)
-	row = CommonTables.Races.FindValue (3, RaceID )
-	RaceTitle = CommonTables.Races.GetValue (row, 2)
+	import IDLUCommon
+	RaceIndex = IDLUCommon.GetRace (actor)
+	RaceTitle = CommonTables.Races.GetValue (RaceIndex, 2)
 	return RaceTitle
 
 # NOTE: this function is called with the primary classes
@@ -1263,11 +1264,97 @@ def RunSelectionChangeHandler ():
 		SelectionChangeHandler ()
 	return
 
-#NOTE: this is for pst's hp buttons, but it could be optionally exported to other games
-portrait_hp_numeric = [0, 0, 0, 0, 0, 0]
+# returns buttons and a numerical index
+# does nothing new in pst, iwd2 due to layout
+# in the rest, it will enable extra button generation for higher resolutions
+# Mode determines arrangment direction, horizontal being for party reform and potentially save/load
+def GetPortraitButtonPairs (Window, ExtraSlots=0, Mode="vertical"):
+	pairs = {}
+	oldSlotCount = 6 + ExtraSlots
+
+	for i in range(min(oldSlotCount, PARTY_SIZE)): # the default chu/game limit or less
+		pairs[i] = Window.GetControl (i)
+
+	# nothing left to do
+	PartySize = GemRB.GetPartySize ()
+	if PartySize <= oldSlotCount:
+		return pairs
+
+	if GameCheck.IsIWD2() or GameCheck.IsPST():
+		print "Parties larger than 6 are currently not supported in IWD2 and PST! Using 6 ..."
+		return pairs
+
+	# generate new buttons by copying from existing ones
+	firstButton = pairs[0]
+	firstRect = firstButton.GetRect ()
+	buttonHeight = firstRect["Height"]
+	buttonWidth = firstRect["Width"]
+	xOffset = firstRect["X"]
+	yOffset = firstRect["Y"]
+	windowRect = Window.GetRect()
+	windowHeight = windowRect["Height"]
+	windowWidth = windowRect["Width"]
+	limit = limitStep = 0
+	scale = 0
+	portraitGap = 0
+	if Mode ==  "horizontal":
+		xOffset += 3*buttonWidth  # width of other controls in party reform; we'll draw on the other side (atleast in guiw8, guiw10 has no need for this)
+		maxWidth = windowWidth - xOffset
+		limit = maxWidth
+		limitStep = buttonWidth
+	else:
+		# reduce it by existing slots + 0 slots in framed views (eg. inventory) and
+		# 1 in main game control (for spacing and any other controls below (ai/select all in bg2))
+		maxHeight = windowHeight - buttonHeight*6 - buttonHeight/2
+		#print "GetPortraitButtonPairs:", ScreenHeight, windowHeight, maxHeight
+		if windowHeight != ScreenHeight:
+			maxHeight += buttonHeight/2
+		limit = maxHeight
+		# for framed views, limited to 6, we downscale the buttons to fit, clipping their portraits
+		if maxHeight < buttonHeight:
+			unused = 20 # remaining unused space below the portraits
+			scale = 1
+			portraitGap = buttonHeight
+			buttonHeight = (buttonHeight*6 + unused) / PartySize
+			portraitGap = portraitGap - buttonHeight - 2 # 2 for a quasi border
+			limit = windowHeight - buttonHeight*6 + unused
+		limitStep = buttonHeight
+
+	for i in range(len(pairs), PartySize):
+		if limitStep > limit:
+			raise SystemExit, "Not enough window space for so many party members (portraits), bailing out! %d vs %d" %(limit, buttonHeight)
+		nextID = 1000 + i
+		if Window.HasControl (nextID):
+			pairs[i] = Window.GetControl (nextID)
+			continue
+		if Mode ==  "horizontal":
+			Window.CreateButton (nextID, xOffset+i*buttonWidth, yOffset, buttonWidth, buttonHeight)
+		else:
+			# vertical
+			Window.CreateButton (nextID, xOffset, i*buttonHeight+yOffset+i*2*scale, buttonWidth, buttonHeight)
+		button = Window.GetControl (nextID)
+		button.SetSprites ("GUIRSPOR", 0, 0, 1, 0, 0)
+
+		pairs[i] = button
+		limit -= limitStep
+
+	# move the buttons back up, to combine the freed space
+	if scale:
+		for i in range(oldSlotCount):
+			button = pairs[i]
+			button.SetSize (buttonWidth, buttonHeight)
+			if i == 0:
+				continue # don't move the first portrait
+			rect = button.GetRect ()
+			x = rect["X"]
+			y = rect["Y"]
+			button.SetPos (x, y-portraitGap*i)
+
+	return pairs
+
 
 def OpenPortraitWindow (needcontrols=0):
-	global PortraitWindow
+	global PortraitWindow, PortraitButtons
 
 	#take care, this window is different in how/iwd
 	if GameCheck.HasHOW() and needcontrols:
@@ -1289,7 +1376,7 @@ def OpenPortraitWindow (needcontrols=0):
 		else:
 			if GameCheck.HasHOW():
 				# Rest (how)
-				pos = GemRB.GetSystemVariable (SV_HEIGHT) - 37
+				pos = ScreenHeight - 37
 				Window.CreateButton (8, 6, pos, 55, 37)
 				Button = Window.GetControl (8)
 				Button.SetSprites ("GUIRSBUT", 0,0,1,0,0)
@@ -1322,16 +1409,17 @@ def OpenPortraitWindow (needcontrols=0):
 			Button.SetTooltip (11942)
 			Button.SetEvent (IE_GUI_BUTTON_ON_PRESS, RestPress)
 
-	for i in range (PARTY_SIZE):
-		Button = Window.GetControl (i)
+	PortraitButtons = GetPortraitButtonPairs (Window)
+	for i in PortraitButtons:
+		Button = PortraitButtons[i]
 		if GameCheck.IsIWD1() or GameCheck.IsIWD2():
 			Button.SetFont ("STATES")
 			# label for status flags (dialog, store, level up)
-			Button.CreateLabelOnButton(200 + i, "STATES", IE_FONT_ALIGN_TOP | IE_FONT_ALIGN_RIGHT) #level up icon is on the right
+			Button.CreateLabelOnButton(200 + i, "STATES", IE_FONT_ALIGN_TOP | IE_FONT_ALIGN_CENTER | IE_FONT_SINGLE_LINE) #level up icon is on the right
 		elif not GameCheck.IsPST():
 			Button.SetFont ("STATES2")
 			# label for status flags (dialog, store, level up)
-			Button.CreateLabelOnButton(200 + i, "STATES2", IE_FONT_ALIGN_TOP | IE_FONT_ALIGN_RIGHT) #level up icon is on the right
+			Button.CreateLabelOnButton(200 + i, "STATES2", IE_FONT_ALIGN_TOP | IE_FONT_ALIGN_CENTER | IE_FONT_SINGLE_LINE) #level up icon is on the right
 
 		Button.SetVarAssoc ("PressedPortrait", i+1)
 
@@ -1351,7 +1439,7 @@ def OpenPortraitWindow (needcontrols=0):
 		if GameCheck.IsIWD1():
 			# overlay a label, so we can display the hp with the correct font. Regular button label
 			#   is used by effect icons
-			Button.CreateLabelOnButton(100+i, "NUMFONT", IE_FONT_ALIGN_TOP|IE_FONT_ALIGN_LEFT)
+			Button.CreateLabelOnButton(100+i, "NUMFONT", IE_FONT_ALIGN_TOP|IE_FONT_ALIGN_LEFT|IE_FONT_SINGLE_LINE)
 			HPLabel = Window.GetControl (100+i)
 			HPLabel.SetUseRGB (True)
 
@@ -1364,6 +1452,7 @@ def OpenPortraitWindow (needcontrols=0):
 		elif GameCheck.IsPST():
 			Button.SetBorder (FRAME_PC_SELECTED, 1, 1, 2, 2, 0, 255, 0, 255)
 			Button.SetBorder (FRAME_PC_TARGET, 3, 3, 4, 4, 255, 255, 0, 255)
+			Button.SetBAM ("PPPANN", 0, 0, -1) # NOTE: just a dummy, won't be visible
 			ButtonHP = Window.GetControl (6 + i)
 			ButtonHP.SetVarAssoc ('PressedPortraitHP', i+1)
 			ButtonHP.SetEvent (IE_GUI_BUTTON_ON_PRESS, PortraitButtonHPOnPress)
@@ -1378,17 +1467,20 @@ def OpenPortraitWindow (needcontrols=0):
 def UpdatePortraitWindow ():
 	"""Updates all of the portraits."""
 
+	global PortraitButtons
+
 	Window = PortraitWindow
 
 	pc = GemRB.GameGetSelectedPCSingle ()
 	Inventory = GemRB.GetVar ("Inventory")
 
-	for portid in range (PARTY_SIZE):
+	PortraitButtons = GetPortraitButtonPairs (Window)
+	for portid in PortraitButtons:
 		if GameCheck.IsPST():
 			UpdateAnimatedPortrait(Window,portid)
 			continue
 
-		Button = Window.GetControl (portid)
+		Button = PortraitButtons[portid]
 		pic = GemRB.GetPlayerPortrait (portid+1, 1)
 		if Inventory and pc != portid+1:
 			pic = None
@@ -1419,7 +1511,7 @@ def UpdatePortraitWindow ():
 		ratio_str, color = GUICommon.SetupDamageInfo (portid+1, Button, Window)
 
 		# character - 1 == bam cycle
-		talk = store = flag = blank = ""
+		talk = store = flag = blank = ' '
 		if GameCheck.IsBG2():
 			# as far as I can tell only BG2 has icons for talk or store
 			flag = blank = chr(238)
@@ -1449,16 +1541,16 @@ def UpdatePortraitWindow ():
 		states = ""
 		# calculate the partial row
 		idx = numEffects % numCols
-		states = effects[0:idx] + "\n"
+		states = effects[0:idx]
 
 		for x in range(idx, numEffects): # now do any rows that are full
-			states = states + effects[x]
-			if (x - idx) % numCols == numCols - 1:
+			if (x - idx) % numCols == 0:
 				states = states + "\n"
+			states = states + effects[x]
 
 		FlagLabel = Window.GetControl(200 + portid)
 		if flag != blank:
-			FlagLabel.SetText(flag)
+			FlagLabel.SetText(flag.ljust(3, blank))
 		else:
 			FlagLabel.SetText("")
 		Button.SetText(states)
@@ -1466,8 +1558,7 @@ def UpdatePortraitWindow ():
 
 def UpdateAnimatedPortrait (Window,i):
 	"""Selects the correct portrait cycle depending on character state"""
-	#FIXME: Actually doesn't, and I can't see why. Same in master. Help?
-	#note: there are actually two portraits per chr, eg PPPANN, WMPANN
+	# note: there are actually two portraits per chr, eg PPPANN (static), WMPANN (animated)
 	Button = Window.GetControl (i)
 	ButtonHP = Window.GetControl (6 + i)
 	pic = GemRB.GetPlayerPortrait (i+1, 0)
@@ -1475,8 +1566,7 @@ def UpdateAnimatedPortrait (Window,i):
 		Button.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_SET)
 		ButtonHP.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_SET)
 		return
-		#sel = GemRB.GameGetSelectedPCSingle () == i + 1
-	Button.SetBAM (pic, 0, 0, -1)
+
 	state = GemRB.GetPlayerStat (i+1, IE_STATE_ID)
 	hp = GemRB.GetPlayerStat (i+1, IE_HITPOINTS)
 	hp_max = GemRB.GetPlayerStat (i+1, IE_MAXHITPOINTS)
@@ -1494,10 +1584,10 @@ def UpdateAnimatedPortrait (Window,i):
 		cycle = 4
 	else:
 		cycle = 0
+
+	Button.SetFlags (IE_GUI_BUTTON_PICTURE | IE_GUI_BUTTON_ANIMATED | IE_GUI_BUTTON_DRAGGABLE |IE_GUI_BUTTON_MULTILINE, OP_SET)
 	if cycle<6:
-		Button.SetFlags(IE_GUI_BUTTON_PICTURE | IE_GUI_BUTTON_ANIMATED | IE_GUI_BUTTON_PLAYRANDOM|IE_GUI_BUTTON_DRAGGABLE|IE_GUI_BUTTON_MULTILINE, OP_SET)
-	else:
-		Button.SetFlags(IE_GUI_BUTTON_PICTURE | IE_GUI_BUTTON_ANIMATED | IE_GUI_BUTTON_DRAGGABLE|IE_GUI_BUTTON_MULTILINE, OP_SET)
+		Button.SetFlags (IE_GUI_BUTTON_PLAYRANDOM, OP_OR)
 
 	Button.SetAnimation (pic, cycle)
 	ButtonHP.SetFlags(IE_GUI_BUTTON_PICTURE, OP_SET)
@@ -1519,16 +1609,12 @@ def UpdateAnimatedPortrait (Window,i):
 	#print "PORTRAIT DEBUG:"
 	#print "state: " + str(state) + " hp: " + str(hp) + " hp_max: " + str(hp_max) + "ratio: " + str(ratio) + " cycle: " + str(cycle) + " state: " + str(state)
 
-	if portrait_hp_numeric[i]:
-		op = OP_NAND
-	else:
+	if GemRB.GetVar('Health Bar Settings') & (1 << i):
 		op = OP_OR
+	else:
+		op = OP_NAND
 	ButtonHP.SetFlags (IE_GUI_BUTTON_PICTURE | IE_GUI_BUTTON_NO_TEXT, op)
 
-	#if sel:
-	#	Button.EnableBorder(FRAME_PC_SELECTED, 1)
-	#else:
-	#	Button.EnableBorder(FRAME_PC_SELECTED, 0)
 	return
 
 def PortraitButtonOnDrag ():
@@ -1583,22 +1669,22 @@ def PortraitButtonHPOnPress (): ##pst hitpoint display
 	Window = PortraitWindow
 
 	i = GemRB.GetVar ('PressedPortraitHP')
-
-	portrait_hp_numeric[i-1] = not portrait_hp_numeric[i-1]
+	hbs = GemRB.GetVar('Health Bar Settings')
 	ButtonHP = Window.GetControl (5 + i)
 
-	if portrait_hp_numeric[i-1]:
+	if hbs & (1 << (i-1)):
 		op = OP_NAND
 	else:
 		op = OP_OR
 
 	ButtonHP.SetFlags (IE_GUI_BUTTON_PICTURE | IE_GUI_BUTTON_NO_TEXT, op)
+	GemRB.SetVar('Health Bar Settings', hbs ^ (1 << (i-1)))
 	return
 
 def SelectionChanged ():
 	"""Ran by the Game class when a PC selection is changed."""
 
-	global PortraitWindow
+	global PortraitWindow, PortraitButtons
 
 	if not PortraitWindow:
 		return
@@ -1607,8 +1693,9 @@ def SelectionChanged ():
 	GemRB.SetVar ("ActionLevel", 0)
 	if (not SelectionChangeHandler):
 		UpdateActionsWindow ()
-		for i in range (PARTY_SIZE):
-			Button = PortraitWindow.GetControl (i)
+		PortraitButtons = GetPortraitButtonPairs (PortraitWindow)
+		for i in PortraitButtons:
+			Button = PortraitButtons[i]
 			Button.EnableBorder (FRAME_PC_SELECTED, GemRB.GameIsPCSelected (i + 1))
 		if SelectionChangeMultiHandler:
 			SelectionChangeMultiHandler ()
@@ -1622,8 +1709,9 @@ def SelectionChanged ():
 			MageTable = GemRB.LoadTable ("magesch")
 			GemRB.SetVar ("MAGESCHOOL", MageTable.FindValue (3, CommonTables.KitList.GetValue (Kit, 6) ) )
 
-		for i in range (PARTY_SIZE):
-			Button = PortraitWindow.GetControl (i)
+		PortraitButtons = GetPortraitButtonPairs (PortraitWindow)
+		for i in PortraitButtons:
+			Button = PortraitButtons[i]
 			Button.EnableBorder (FRAME_PC_SELECTED, i + 1 == sel)
 	import CommonWindow
 	CommonWindow.CloseContainerWindow()
@@ -1653,7 +1741,7 @@ def PortraitButtonOnMouseEnter ():
 		return
 
 	if GemRB.IsDraggingItem ():
-		Button = PortraitWindow.GetControl (i-1)
+		Button = PortraitButtons[i-1]
 		Button.EnableBorder (FRAME_PC_TARGET, 1)
 	return
 
@@ -1681,7 +1769,7 @@ def PortraitButtonOnMouseLeave ():
 	if not i:
 		return
 
-	Button = PortraitWindow.GetControl (i-1)
+	Button = PortraitButtons[i-1]
 	Button.EnableBorder (FRAME_PC_TARGET, 0)
 	GemRB.SetVar ("PressedPortrait", 0)
 	GemRB.SetTimedEvent (CheckDragging, 1)
@@ -1827,7 +1915,10 @@ def UpdateClock ():
 		ActionsWindow = GemRB.LoadWindow(0)
 		Button = ActionsWindow.GetControl (0)
 		SetPSTGamedaysAndHourToken ()
-		Button.SetTooltip (GemRB.GetString(65027))
+		# The check prevents the tooltip being set on a wrong control
+		#   when switching windows, e.g. GUIOPT's 'Return to Game' button
+		if Button.HasAnimation('WMTIME'):
+			Button.SetTooltip (GemRB.GetString(65027))
 		#this function does update the clock tip, but the core fails to display it
 
 	else:

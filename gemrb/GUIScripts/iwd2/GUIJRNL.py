@@ -104,7 +104,7 @@ def UpdateJournalWindow ():
 
 	# Title
 	Title = Window.GetControl (5)
-	Title.SetText (16202 + Chapter)
+	Title.SetText ("[color=FFFF00]" + GemRB.GetString(16202+Chapter) + "[/color]")
 
 	# text area
 	Text = Window.GetControl (1)
@@ -124,9 +124,8 @@ def UpdateJournalWindow ():
 		GemRB.SetToken("HOUR",str(hours%24 ) )
 		GemRB.SetVar("DAYANDMONTH",dayandmonth)
 		GemRB.SetToken("YEAR",year)
-		Text.Append ("[color=FFFF00]"+GemRB.GetString(15980)+"[/color]", 3*i)
-		Text.Append (je['Text'], 3*i + 1)
-		Text.Append ("", 3*i + 2)
+		Text.Append ("[color=FFFF00]"+GemRB.GetString(15980)+"[/color]\n")
+		Text.Append (GemRB.GetString(je['Text'])+"\n\n")
 
 
 ###################################################

@@ -44,6 +44,13 @@
 #include "System/FileStream.h"
 #include "System/SlicedStream.h"
 
+#include <stdlib.h>
+#ifdef ANDROID
+// android lacks mblen
+int wctomb(char *s, wchar_t wc) { return wcrtomb(s, wc, NULL); }
+int mbtowc(wchar_t *pwc, const char *s, size_t n) { return mbrtowc(pwc, s, n, NULL); }
+#endif
+
 using namespace GemRB;
 
 #define DEF_OPEN   0
@@ -252,6 +259,7 @@ bool AREImporter::ChangeMap(Map *map, bool day_or_night)
 	PluginHolder<TileMapMgr> tmm(IE_WED_CLASS_ID);
 	DataStream* wedfile = gamedata->GetResource( TmpResRef, IE_WED_CLASS_ID );
 	tmm->Open( wedfile );
+	tmm->SetExtendedNight( !day_or_night );
 
 	//alter the tilemap object, not all parts of that object are coming from the wed/tis
 	//this is why we have to be careful
@@ -366,6 +374,7 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 
 	if (!core->IsAvailable( IE_WED_CLASS_ID )) {
 		print("[AREImporter]: No Tile Map Manager Available.");
+		delete map;
 		return NULL;
 	}
 	ieResRef TmpResRef;
@@ -384,6 +393,7 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 	TileMap* tm = tmm->GetTileMap(NULL);
 	if (!tm) {
 		print("[AREImporter]: No Tile Map Available.");
+		delete map;
 		return NULL;
 	}
 
@@ -528,7 +538,6 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 			memset(DialogResRef, 0, sizeof(DialogResRef));
 		}
 
-		char* string = core->GetString( StrRef );
 		str->Seek( VerticesOffset + ( FirstVertex * 4 ), GEM_STREAM_START );
 		Point* points = ( Point* ) malloc( VertexCount*sizeof( Point ) );
 		for (x = 0; x < VertexCount; x++) {
@@ -547,12 +556,16 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 		// translate door cursor on infopoint to correct cursor
 		if (Cursor == IE_CURSOR_DOOR) Cursor = IE_CURSOR_PASS;
 		ip->Cursor = Cursor;
-		ip->overHeadText = string;
+		String* str = core->GetString( StrRef );
+		ip->SetOverheadText(*str, false);
+		delete str;
 		ip->StrRef = StrRef; //we need this when saving area
-		ip->textDisplaying = 0;
-		ip->timeStartDisplaying = 0;
 		ip->SetMap(map);
 		ip->Flags = Flags;
+		// ensure repeating traps are armed, fix for bg2 ar1404 mirror trap to fire
+		if (ip->TrapResets()) {
+			ip->Trapped = true;
+		}
 		ip->UsePoint.x = PosX;
 		ip->UsePoint.y = PosY;
 		//FIXME: PST doesn't use this field
@@ -722,6 +735,7 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 		str->ReadResRef( ShortName );
 		str->ReadDword( &Flags );
 		Flags = FixIWD2DoorFlags(Flags, false);
+		if (AreaType & AT_OUTDOOR) Flags |= DOOR_TRANSPARENT; // actually true only for fog-of-war, excluding other actors
 		str->ReadDword( &OpenFirstVertex );
 		str->ReadWord( &OpenVerticesCount );
 		str->ReadWord( &ClosedVerticesCount );
@@ -984,7 +998,7 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 			str->Seek( 4, GEM_CURRENT_POS ); //actor animation, unused
 			str->ReadDword( &Orientation );
 			str->ReadDword( &RemovalTime );
-			str->Seek( 4, GEM_CURRENT_POS );
+			str->Seek( 4, GEM_CURRENT_POS ); // TODO: movement restriction distance for spawns, random walk http://gibberlings3.net/forums/index.php?showtopic=21724
 			str->ReadDword( &Schedule );
 			str->ReadDword( &TalkCount );
 			str->ReadResRef( Dialog );
@@ -1045,10 +1059,10 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 					ab->BaseStats[IE_EA]=EA_EVILCUTOFF;
 				}
 				if (Flags&AF_SEEN_PARTY) {
-					ab->SetMCFlag(MC_SEENPARTY,BM_OR);
+					ab->SetMCFlag(MC_SEENPARTY,OP_OR);
 				}
 				if (Flags&AF_INVULNERABLE) {
-					ab->SetMCFlag(MC_INVULNERABLE,BM_OR);
+					ab->SetMCFlag(MC_INVULNERABLE,OP_OR);
 				}
 				if (!(Flags&AF_ENABLED)) {
 					// DifficultyMargin - only enable actors that are difficult enough vs the area difficulty
@@ -1197,8 +1211,7 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 	str->Seek( NoteOffset, GEM_STREAM_START );
 
 	Point point;
-	ieDword color;
-	char *text;
+	ieDword color = 0;
 
 	//Don't bother with autonote.ini if the area has autonotes (ie. it is a saved area)
 	int pst = core->HasFeature( GF_AUTOMAP_INI );
@@ -1213,53 +1226,49 @@ Map* AREImporter::GetMap(const char *ResRef, bool day_or_night)
 			while (count) {
 				char key[32];
 				int value;
-				sprintf(key, "text%d",count);
-				value = INInote->GetKeyAsInt( map->GetScriptName(), key, 0);
-				text = core->GetString(value);
 				sprintf(key, "xPos%d",count);
 				value = INInote->GetKeyAsInt( map->GetScriptName(), key, 0);
 				point.x = value;
 				sprintf(key, "yPos%d",count);
 				value = INInote->GetKeyAsInt( map->GetScriptName(), key, 0);
 				point.y = value;
-				map->AddMapNote( point, color, text, 0);
+				sprintf(key, "text%d",count);
+				value = INInote->GetKeyAsInt( map->GetScriptName(), key, 0);
+				map->AddMapNote( point, color, value);
 				count--;
 			}
 		}
 	}
 	for (i = 0; i < NoteCount; i++) {
-		ieStrRef strref = 0;
-
 		if (pst) {
 			ieDword px,py;
-
 			str->ReadDword(&px);
 			str->ReadDword(&py);
 			point.x=px;
 			point.y=py;
-			text = (char *) malloc( 500 );
-			str->Read(text, 500 );
-			text[499] = 0;
+
+			char bytes[501]; // 500 + null
+			str->Read(bytes, 500 );
+			bytes[500] = '\0';
+			String* text = StringFromCString(bytes);
 			str->ReadDword(&color); //readonly == 1
+			map->AddMapNote(point, color, text);
 			str->Seek(20, GEM_CURRENT_POS);
-			//+1 for the terminating zero!!!
-			text = (char *) realloc( text, strlen(text)+1 );
-		}
-		else {
+		} else {
 			ieWord px,py;
 
 			str->ReadWord( &px );
 			str->ReadWord( &py );
 			point.x=px;
 			point.y=py;
+			ieStrRef strref = 0;
 			str->ReadDword( &strref );
 			str->ReadWord( &px );
 			str->ReadWord( &py );
 			color=py;
 			str->Seek( 40, GEM_CURRENT_POS );
-			text = core->GetString( strref,0 );
+			map->AddMapNote( point, color, strref );
 		}
-		map->AddMapNote( point, color, text, strref );
 	}
 
 	//this is a ToB feature (saves the unexploded projectiles)
@@ -2131,18 +2140,32 @@ int AREImporter::PutMapnotes( DataStream *stream, Map *map)
 
 	memset(filling,0,sizeof(filling) );
 	for (unsigned int i=0;i<NoteCount;i++) {
-		MapNote *mn = map->GetMapNote(i);
+		const MapNote& mn = map->GetMapNote(i);
 		int x;
 
 		if (pst) {
-			tmpDword = (ieDword) mn->Pos.x;
+			tmpDword = (ieDword) mn.Pos.x;
 			stream->WriteDword( &tmpDword );
-			tmpDword = (ieDword) mn->Pos.y;
+			tmpDword = (ieDword) mn.Pos.y;
 			stream->WriteDword( &tmpDword );
-			unsigned int len = (unsigned int) strlen(mn->text);
-			if (len>500) len=500;
-			stream->Write( mn->text, len);
-			x = 500-len;
+			int len = 0;
+			if (mn.text) {
+				// limited to 500 *bytes* of text, convert to a multibyte encoding.
+				// we convert to MB because it fits more than if we wrote the wide characters
+				char* mbstring = MBCStringFromString(*mn.text);
+				// FIXME: depends on locale blah blah (see MBCStringFromString definition)
+				if (mbstring) {
+					// only care about number of bytes before null so strlen is what we want despite being MB string
+					len = (std::min)(static_cast<int>(strlen(mbstring)), 500);
+					stream->Write( mbstring, len);
+					free(mbstring);
+				} else {
+					Log(WARNING, "AREImporter", "MapNote converted to an invalid multibyte sequence; cannot write it to file.\nFailed Note: %ls", mn.text->c_str());
+				}
+			}
+
+			// pad the remaining space
+			x = 500 - len;
 			for (int j=0;j<x/8;j++) {
 				stream->Write( filling, 8);
 			}
@@ -2150,22 +2173,19 @@ int AREImporter::PutMapnotes( DataStream *stream, Map *map)
 			if (x) {
 				stream->Write( filling, x);
 			}
-			tmpDword = (ieDword) mn->color;
+			tmpDword = (ieDword) mn.color;
 			stream->WriteDword(&tmpDword);
 			for (x=0;x<5;x++) { //5 empty dwords
 				stream->Write( filling, 4);
 			}
 		} else {
-			tmpWord = (ieWord) mn->Pos.x;
+			tmpWord = (ieWord) mn.Pos.x;
 			stream->WriteWord( &tmpWord );
-			tmpWord = (ieWord) mn->Pos.y;
+			tmpWord = (ieWord) mn.Pos.y;
 			stream->WriteWord( &tmpWord );
-			//update custom strref
-			mn->strref = core->UpdateString( mn->strref, mn->text );
-			tmpDword = mn->strref;
-			stream->WriteDword( &tmpDword);
+			stream->WriteDword( &mn.strref);
 			stream->WriteWord( &tmpWord );
-			stream->WriteWord( &mn->color );
+			stream->WriteWord( &mn.color );
 			tmpDword = 1;
 			stream->WriteDword( &tmpDword );
 			for (x=0;x<9;x++) { //9 empty dwords

@@ -35,13 +35,13 @@ StartOverWindow = 0
 PortraitButton = 0
 StepButtons = {}
 PersistButtons = {}
-Steps = ['Gender', 'Race', 'Class', 'Alignment', 'Abilities', 'Skills', 'Appearance', 'Name']
+Steps = ['Gender', 'Race', 'Class', 'Alignment', 'Abilities', 'Enemy', 'Appearance', 'Name']
 GlobalStep = 0
 
 ### Utility functions
-def AddText(strref, row = False):
-	if row: return TextAreaControl.Append(strref, row)
-	return TextAreaControl.Append(strref)
+def AddText(strref, newlines=0):
+	TextAreaControl.Append (strref)
+	TextAreaControl.Append ("\n" * newlines)
 ### End utility functions
 
 def UpdateOverview(CurrentStep):
@@ -107,9 +107,9 @@ def UpdateOverview(CurrentStep):
 				PersistButtons[Key].SetFlags (IE_GUI_BUTTON_CANCEL, OP_OR)
 		
 		if Key == 'Next' and CurrentStep == 9:
-			Text = 11962
 			State = 1
 			Event = NextPress
+			PersistButtons[Key].SetFlags (IE_GUI_BUTTON_DEFAULT, OP_OR)
 		
 		if Key == 'Start' and CurrentStep == 1:
 			Text = 13727
@@ -133,43 +133,39 @@ def UpdateOverview(CurrentStep):
 			TextAreaControl.SetText(12135)
 		else:
 			TextAreaControl.SetText(1047)
-			AddText(': ' + GemRB.GetToken('CHARNAME'))
-			AddText(12135, -1)
+			AddText(': ' + GemRB.GetToken('CHARNAME'), 1)
+			AddText(12135)
 		AddText(': ')
 		strref = 1049 + GemRB.GetVar('Gender')
-		AddText(strref)
+		AddText(strref, 1)
 	
 	if GemRB.GetVar('Race') > 0:
-		AddText(1048, -1)
+		AddText(1048)
 		AddText(': ')
-		AddText(Tables[0].GetValue(Tables[0].FindValue(3, GemRB.GetVar('Race')), 2))
+		AddText(Tables[0].GetValue(Tables[0].FindValue(3, GemRB.GetVar('Race')), 2), 1)
 	
 	if GemRB.GetVar('Class') > 0:
-		AddText(11959, -1)
+		AddText(11959)
 		AddText(': ')
-		AddText(Tables[1].GetValue(GemRB.GetVar('Class') - 1, 0))
+		AddText(Tables[1].GetValue(GemRB.GetVar('Class') - 1, 0), 1)
 	
 	if GemRB.GetVar('Alignment') > 0:
-		AddText(11958, -1)
+		AddText(11958)
 		AddText(': ')
-		AddText(Tables[2].GetValue(GemRB.GetVar('Alignment') - 1, 0))
+		AddText(Tables[2].GetValue(GemRB.GetVar('Alignment') - 1, 0), 1)
 	
 	if GemRB.GetVar('Ability 0') > 0:
-		AddText('\n[color=FFFF00]', -1)
-		AddText(17088)
-		AddText('[/color]')
+		AddText('\n[color=FFFF00]' + GemRB.GetString(17088) + '[/color]', 1)
 		for i in range(0, 6):
 			strref = Tables[3].GetValue(i, 2)
-			AddText(strref, -1)
+			AddText(strref)
 			abl = GemRB.GetVar('Ability ' + str(i))
-			AddText(': %d (%+d)' % (abl, abl / 2 - 5))
+			AddText(': %d (%+d)' % (abl, abl / 2 - 5), 1)
 	
 	if CurrentStep > 6:
-		AddText('\n[color=FFFF00]', -1)
-		AddText(11983)
-		AddText('[/color]')
+		AddText('\n[color=FFFF00]' + GemRB.GetString(11983) + '[/color]', 1)
 		
-		ClassColumn = Tables[1].GetValue(GemRB.GetVar('Class') - 1, 3, 1) # Finds base class row id
+		ClassColumn = Tables[1].GetValue(GemRB.GetVar('Class') - 1, 3, GTV_INT) # Finds base class row id
 		if ClassColumn < 1: ClassColumn = GemRB.GetVar('Class') - 1 # If 0 then already a base class so need actual row
 		else: ClassColumn -= 1 # 'CLASS' column in classes.2da is out by 1 for some reason
 		ClassColumn += 4 # There are 4 columns before the classes in skills.2da
@@ -183,40 +179,61 @@ def UpdateOverview(CurrentStep):
 			ClassColumn = GemRB.GetVar('Class') - 12
 		
 		RaceName = Tables[0].GetRowName(Tables[0].FindValue(3, GemRB.GetVar('Race')))
-		SkillColumn = Tables[0].GetValue(RaceName, 'SKILL_COLUMN', 1) + 1
+		SkillColumn = Tables[0].GetValue(RaceName, 'SKILL_COLUMN', GTV_INT) + 1
 		Lookup = {'STR': 0, 'DEX': 1, 'CON': 2, 'INT': 3, 'WIS': 4, 'CHR': 5} # Probably a better way to do this
 		for i in range(Tables[4].GetRowCount()):
 			SkillName = Tables[5].GetRowName(i)
-			Abl = Tables[4].GetValue(i, 1, 0)
+			Abl = Tables[4].GetValue(i, 1, GTV_STR)
 			Ranks = GemRB.GetVar('Skill ' + str(i))
 			value = Ranks
 			value += (GemRB.GetVar('Ability ' + str(Lookup[Abl])) / 2 - 5)
-			value += Tables[5].GetValue(i, SkillColumn, 1)
-			value += Tables[5].GetValue(i, ClassColumn, 1)
+			value += Tables[5].GetValue(i, SkillColumn, GTV_INT)
+			value += Tables[5].GetValue(i, ClassColumn, GTV_INT)
 			
-			untrained = Tables[5].GetValue(i, 3, 1)
+			untrained = Tables[5].GetValue(i, 3, GTV_INT)
 			if not untrained and Ranks < 1:
 				value = 0
 			
 			if value:
 				strref = Tables[5].GetValue(i, 1)
-				AddText(strref, -1)
+				AddText(strref)
 				strn = ': ' + str(value)
 				if value != Ranks: strn += ' (' + str(Ranks) + ')'
-				AddText(strn)
+				AddText(strn, 1)
 
-		AddText('\n[color=FFFF00]', -1)
-		AddText(36310)
-		AddText('[/color]')
+		AddText('\n[color=FFFF00]' + GemRB.GetString(36310) + '[/color]', 1)
 		
 		for i in range(Tables[6].GetRowCount()):
 			value = GemRB.GetVar('Feat ' + str(i))
 			if value:
 				strref = Tables[7].GetValue(i, 1)
-				AddText(strref, -1)
+				AddText(strref)
 				multiple = Tables[6].GetValue(i, 0)
 				if multiple != 0:
 					AddText(': ' + str(value))
+				AddText('\n')
+
+		AddText('\n')
+		import CommonTables
+		import Spellbook
+		MyChar = GemRB.GetVar ("Slot")
+		BookTypes = { IE_IWD2_SPELL_BARD:39341, IE_IWD2_SPELL_CLERIC:11028, \
+			IE_IWD2_SPELL_DRUID:39342, IE_IWD2_SPELL_PALADIN:39343, IE_IWD2_SPELL_RANGER:39344, \
+			IE_IWD2_SPELL_SORCERER:39345, IE_IWD2_SPELL_WIZARD:11027, IE_IWD2_SPELL_DOMAIN:0 }
+		for bt in BookTypes:
+			KnownSpells = Spellbook.GetKnownSpells(MyChar, bt)
+			if len(KnownSpells):
+				BTName = BookTypes[bt]
+				# individual domains, luckily in kit order
+				if BTName == 0:
+					KitIndex = GemRB.GetVar ("Class") - 1
+					KitIndex -= CommonTables.Classes.FindValue ("CLASS", GemRB.GetVar ("BaseClass"))
+					BTName = 39346 + KitIndex
+				AddText ('\n[color=FFFF00]')
+				AddText (BTName)
+				AddText ('[/color]\n')
+				for ks in KnownSpells:
+					AddText (GemRB.GetString(ks['SpellName'])+"\n")
 
 	# Handle StartOverWindow
 	StartOverWindow = GemRB.LoadWindow(53)

@@ -24,7 +24,6 @@
 
 #include "Interface.h"
 #include "Variables.h"
-#include "Video.h"
 #include "GUI/EventMgr.h"
 #include "GUI/Window.h"
 
@@ -37,7 +36,8 @@ ScrollBar::ScrollBar(const Region& frame, Sprite2D* images[IE_SCROLLBAR_IMAGE_CO
 	Pos = 0;
 	Value = 0;
 	State = 0;
-	stepPx = SliderYPos = 0;
+	SliderYPos = 0;
+	ScrollDelta = 1;
 	ResetEventHandler( ScrollBarOnChange );
 	ta = NULL;
 
@@ -49,13 +49,16 @@ ScrollBar::ScrollBar(const Region& frame, Sprite2D* images[IE_SCROLLBAR_IMAGE_CO
 		- GetFrameHeight(IE_GUI_SCROLLBAR_SLIDER)
 		- GetFrameHeight(IE_GUI_SCROLLBAR_DOWN_UNPRESSED)
 		- GetFrameHeight(IE_GUI_SCROLLBAR_UP_UNPRESSED);
+	if (SliderRange <= 0) {
+		// must have a positive value, or we wont be able to scroll anywhere but the top
+		SliderRange = 1;
+	}
 }
 
 ScrollBar::~ScrollBar(void)
 {
-	Video *video=core->GetVideoDriver();
 	for(int i=0; i < IE_SCROLLBAR_IMAGE_COUNT; i++) {
-		video->FreeSprite(Frames[i]);
+		Sprite2D::FreeSprite(Frames[i]);
 	}
 }
 
@@ -64,29 +67,25 @@ int ScrollBar::GetFrameHeight(int frame) const
 	return Frames[frame]->Height;
 }
 
-void ScrollBar::CalculateStep()
+double ScrollBar::GetStep()
 {
+	double stepPx = 0.0;
 	if (Value){
 		stepPx = (double)SliderRange / (double)Value;
-	} else {
-		stepPx = 0.0;
 	}
+	return stepPx;
 }
 
 /** Sets a new position, relays the change to an associated textarea and calls
 	any existing GUI OnChange callback */
 void ScrollBar::SetPos(ieDword NewPos)
 {
-	if (!Frames[IE_GUI_SCROLLBAR_UP_UNPRESSED]) return;
-
 	if (NewPos > Value) NewPos = Value;
 
 	if (( State & SLIDER_GRAB ) == 0){
-		// set the slider to the exact y for NewPos. in SetPosForY(y) it is set to any arbitrary position that may lie between 2 values.
+		// set the slider to the exact y for NewPos.
 		// if the slider is grabbed dont set position! otherwise you will get a flicker as it bounces between exact positioning and arbitrary
-		SliderYPos = ( unsigned short )
-			( NewPos * ( ( SliderRange ) /
-			( double ) ( Value < 1 ? 1 : Value ) ) );
+		SliderYPos = (unsigned short) (NewPos * GetStep());
 	}
 	if (Pos && ( Pos == NewPos )) {
 		return;
@@ -95,7 +94,7 @@ void ScrollBar::SetPos(ieDword NewPos)
 	Pos = (ieWord) NewPos;
 	if (ta) {
 		MarkDirty(); // if the FIXME below is ever fixed move this up.
-		(( TextArea* )ta)->SetRow( Pos );
+		((TextArea *)ta)->ScrollToY(Pos, this);
 	} else {
 		// FIXME: hack (I think), this is needed because scrolling the loot windows
 		// will cause the bottom window to draw over the sidebar windows.
@@ -108,14 +107,15 @@ void ScrollBar::SetPos(ieDword NewPos)
 	RunEventHandler( ScrollBarOnChange );
 }
 
-/** Sets the Pos for a given y coordinate (control coordinates) */
-/** Provides per-pixel scrolling. Top = 0px */
+/** Sets the Pos for a given y pixel coordinate (control coordinates) */
 void ScrollBar::SetPosForY(short y)
 {
+	double stepPx = GetStep();
 	if (y && stepPx && Value > 0) {// if the value is 0 we are simultaneously at both the top and bottom so there is nothing to do
 		// clamp the value
+		y -= (Height - SliderRange) / 2;
 		if (y < 0) y = 0;
-		else if ((ieWord)y > SliderRange) y = SliderRange;
+		else if (y > SliderRange) y = SliderRange;
 
 		unsigned short NewPos = (unsigned short)(y / stepPx);
 		if (Pos != NewPos) {
@@ -123,21 +123,11 @@ void ScrollBar::SetPosForY(short y)
 		} else {
 			MarkDirty();
 		}
-
-		if (ta) {
-			// we must "scale" the pixels the slider moves
-			TextArea* t = (TextArea*) ta;
-			unsigned int taY = y * (t->GetRowHeight() / stepPx);
-			t->ScrollToY(taY, this);
-			SliderYPos = y;
-		} else {
-			// other controls don't support per-pixel scrolling
-			SliderYPos = Pos * stepPx;
-		}
+		SliderYPos = y;
 	} else {
 		// top is our default position
-		SliderYPos = 0;
 		SetPos(0);
+		SliderYPos = 0;
 	}
 }
 
@@ -153,22 +143,16 @@ void ScrollBar::UpdateState(const char* Variable, unsigned int Sum)
 /** SDL < 1.3 Mousewheel support */
 void ScrollBar::ScrollUp()
 {
-	if( Pos ) SetPos( Pos - 1 );
+	SetPos(Pos >= ScrollDelta ? Pos - ScrollDelta : 0);
 }
 
 /** SDL < 1.3 Mousewheel support */
 void ScrollBar::ScrollDown()
 {
-	SetPos( Pos + 1 );
+	SetPos(Pos + ScrollDelta);
 }
 
-double ScrollBar::GetStep()
-{
-	CalculateStep();
-	return stepPx;
-}
-
-bool ScrollBar::HasBackground()
+bool ScrollBar::IsOpaque() const
 {
 	/*
 	 IWD2 scrollbars have a transparent trough and we dont have a good way to know about such things.
@@ -188,39 +172,37 @@ void ScrollBar::DrawInternal(Region& drawFrame)
 	
 	//draw the up button
 	if (( State & UP_PRESS ) != 0) {
-		if (Frames[IE_GUI_SCROLLBAR_UP_PRESSED])
-			video->BlitSprite( Frames[IE_GUI_SCROLLBAR_UP_PRESSED], drawFrame.x, drawFrame.y, true, &drawFrame );
+		video->BlitSprite( Frames[IE_GUI_SCROLLBAR_UP_PRESSED], drawFrame.x, drawFrame.y, true, &drawFrame );
 	} else {
-		if (Frames[IE_GUI_SCROLLBAR_UP_UNPRESSED])
-			video->BlitSprite( Frames[IE_GUI_SCROLLBAR_UP_UNPRESSED], drawFrame.x, drawFrame.y, true, &drawFrame );
+		video->BlitSprite( Frames[IE_GUI_SCROLLBAR_UP_UNPRESSED], drawFrame.x, drawFrame.y, true, &drawFrame );
 	}
-	//draw the trough
 	int maxy = drawFrame.y + drawFrame.h - GetFrameHeight(IE_GUI_SCROLLBAR_DOWN_UNPRESSED);
 	int stepy = GetFrameHeight(IE_GUI_SCROLLBAR_TROUGH);
-	if (stepy) {
-		Region rgn( drawFrame.x, drawFrame.y + upMy, drawFrame.w, domy - upMy);
-		for (int dy = drawFrame.y + upMy; dy < maxy; dy += stepy) {
-			//TROUGH surely exists if it has a nonzero height
-			video->BlitSprite( Frames[IE_GUI_SCROLLBAR_TROUGH],
-				drawFrame.x + Frames[IE_GUI_SCROLLBAR_TROUGH]->XPos + ( ( Width - Frames[IE_GUI_SCROLLBAR_TROUGH]->Width - 1 ) / 2 ),
-				dy + Frames[IE_GUI_SCROLLBAR_TROUGH]->YPos, true, &rgn );
+	// some "scrollbars" are sized to just show the up and down buttons
+	// we must skip the trough (and slider) in those cases
+	if (maxy >= stepy) {
+		// draw the trough
+		if (stepy) {
+			Region rgn( drawFrame.x, drawFrame.y + upMy, drawFrame.w, domy - upMy);
+			for (int dy = drawFrame.y + upMy; dy < maxy; dy += stepy) {
+				//TROUGH surely exists if it has a nonzero height
+				video->BlitSprite( Frames[IE_GUI_SCROLLBAR_TROUGH],
+					drawFrame.x + Frames[IE_GUI_SCROLLBAR_TROUGH]->XPos + ( ( Width - Frames[IE_GUI_SCROLLBAR_TROUGH]->Width - 1 ) / 2 ),
+					dy + Frames[IE_GUI_SCROLLBAR_TROUGH]->YPos, true, &rgn );
+			}
 		}
+		// draw the slider
+		short slx = ((Width - Frames[IE_GUI_SCROLLBAR_SLIDER]->Width - 1) / 2 );
+		video->BlitSprite( Frames[IE_GUI_SCROLLBAR_SLIDER],
+						  drawFrame.x + slx + Frames[IE_GUI_SCROLLBAR_SLIDER]->XPos,
+						  drawFrame.y + Frames[IE_GUI_SCROLLBAR_SLIDER]->YPos + upMy + SliderYPos,
+						  true, &drawFrame );
 	}
 	//draw the down button
 	if (( State & DOWN_PRESS ) != 0) {
-		if (Frames[IE_GUI_SCROLLBAR_DOWN_PRESSED]) 
-			video->BlitSprite( Frames[IE_GUI_SCROLLBAR_DOWN_PRESSED], drawFrame.x, maxy, true, &drawFrame );
+		video->BlitSprite( Frames[IE_GUI_SCROLLBAR_DOWN_PRESSED], drawFrame.x, maxy, true, &drawFrame );
 	} else {
-		if (Frames[IE_GUI_SCROLLBAR_DOWN_UNPRESSED])
-			video->BlitSprite( Frames[IE_GUI_SCROLLBAR_DOWN_UNPRESSED], drawFrame.x, maxy, true, &drawFrame );
-	}
-	//draw the slider if it exists
-	if (Frames[IE_GUI_SCROLLBAR_SLIDER]) {
-		short slx = ((Width - Frames[IE_GUI_SCROLLBAR_SLIDER]->Width - 1) / 2 );
-		video->BlitSprite( Frames[IE_GUI_SCROLLBAR_SLIDER],
-			drawFrame.x + slx + Frames[IE_GUI_SCROLLBAR_SLIDER]->XPos,
-			drawFrame.y + Frames[IE_GUI_SCROLLBAR_SLIDER]->YPos + upMy + SliderYPos,
-			true, &drawFrame );
+		video->BlitSprite( Frames[IE_GUI_SCROLLBAR_DOWN_UNPRESSED], drawFrame.x, maxy, true, &drawFrame );
 	}
 }
 
@@ -249,7 +231,6 @@ void ScrollBar::OnMouseDown(unsigned short /*x*/, unsigned short y,
 		ScrollDown();
 		return;
 	}
-	CalculateStep();
 	// if we made it this far we will jump the nib to y and "grab" it
 	// this way we only need to click once to jump+scroll
 	State |= SLIDER_GRAB;
@@ -259,7 +240,7 @@ void ScrollBar::OnMouseDown(unsigned short /*x*/, unsigned short y,
 		Frames[IE_GUI_SCROLLBAR_SLIDER]->YPos = y - sliderPos - GetFrameHeight(IE_GUI_SCROLLBAR_SLIDER)/2;
 		return;
 	}
-	SetPosForY(y - (Height - SliderRange)/2);
+	SetPosForY(y);
 }
 
 /** Mouse Button Up */
@@ -269,6 +250,8 @@ void ScrollBar::OnMouseUp(unsigned short /*x*/, unsigned short /*y*/,
 	MarkDirty();
 	State = 0;
 	Frames[IE_GUI_SCROLLBAR_SLIDER]->YPos = 0; //this is to clear any offset incurred by grabbing the slider
+	// refresh the cursor/hover selection
+	core->GetEventMgr()->FakeMouseMove();
 }
 
 /** Mousewheel scroll */
@@ -286,7 +269,7 @@ void ScrollBar::OnMouseWheelScroll(short /*x*/, short y)
 void ScrollBar::OnMouseOver(unsigned short /*x*/, unsigned short y)
 {
 	if (State&SLIDER_GRAB) {
-		SetPosForY(y - (Height - SliderRange)/2 - Frames[IE_GUI_SCROLLBAR_SLIDER]->YPos);
+		SetPosForY(y - Frames[IE_GUI_SCROLLBAR_SLIDER]->YPos);
 	}
 }
 
@@ -296,13 +279,13 @@ void ScrollBar::SetMax(unsigned short Max)
 	Value = Max;
 	if (Max == 0) {
 		SetPos( 0 );
-	} else if (Pos >= Max){
-		SetPos( Max - 1 );
+	} else if (Pos > Max){
+		SetPos( Max );
 	}
 }
 
 /** Sets the ScrollBarOnChange event (guiscript callback) */
-bool ScrollBar::SetEvent(int eventType, EventHandler handler)
+bool ScrollBar::SetEvent(int eventType, ControlEventHandler handler)
 {
 	switch (eventType) {
 	case IE_GUI_SCROLLBAR_ON_CHANGE:

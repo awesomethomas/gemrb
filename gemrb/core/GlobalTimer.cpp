@@ -50,7 +50,8 @@ void GlobalTimer::Init()
 	fadeFromCounter = 0;
 	fadeFromMax = 0;
 	fadeToMax = 0;
-	waitCounter = 0;
+	fadeToFactor = fadeFromFactor = 1;
+	shakeX = shakeY = 0;
 	shakeCounter = 0;
 	startTime = 0; //forcing an update
 	speed = 0;
@@ -215,8 +216,9 @@ void GlobalTimer::DoFadeStep(ieDword count) {
 		fadeToCounter-=count;
 		if (fadeToCounter<0) {
 			fadeToCounter=0;
+			fadeToFactor = 1;
 		}
-		video->SetFadePercent( ( ( fadeToMax - fadeToCounter ) * 100 ) / fadeToMax );
+		video->SetFadePercent( ( ( fadeToMax - fadeToCounter ) * 100 ) / fadeToMax / fadeToFactor);
 		//bug/patch #1837747 made this unneeded
 		//goto end; //hmm, freeze gametime?
 	}
@@ -226,14 +228,16 @@ void GlobalTimer::DoFadeStep(ieDword count) {
 			fadeFromCounter-=count;
 			if (fadeFromCounter<fadeFromMax) {
 				fadeFromCounter=fadeFromMax;
+				fadeFromFactor = 1;
 			}
 			//don't freeze gametime when already dark
 		} else {
 			fadeFromCounter+=count;
 			if (fadeToCounter>fadeFromMax) {
 				fadeToCounter=fadeFromMax;
+				fadeToFactor = 1;
 			}
-			video->SetFadePercent( ( ( fadeFromMax - fadeFromCounter ) * 100 ) / fadeFromMax );
+			video->SetFadePercent( ( ( fadeFromMax - fadeFromCounter ) * 100 ) / fadeFromMax / fadeFromFactor);
 			//bug/patch #1837747 made this unneeded
 			//goto end; //freeze gametime?
 		}
@@ -243,7 +247,7 @@ void GlobalTimer::DoFadeStep(ieDword count) {
 	}
 }
 
-void GlobalTimer::SetFadeToColor(unsigned long Count)
+void GlobalTimer::SetFadeToColor(unsigned long Count, unsigned short factor)
 {
 	if(!Count) {
 		Count = 64;
@@ -253,20 +257,17 @@ void GlobalTimer::SetFadeToColor(unsigned long Count)
 	//stay black for a while
 	fadeFromCounter = 128;
 	fadeFromMax = 0;
+	fadeToFactor = factor;
 }
 
-void GlobalTimer::SetFadeFromColor(unsigned long Count)
+void GlobalTimer::SetFadeFromColor(unsigned long Count, unsigned short factor)
 {
 	if(!Count) {
 		Count = 64;
 	}
 	fadeFromCounter = 0;
 	fadeFromMax = Count;
-}
-
-void GlobalTimer::SetWait(unsigned long Count)
-{
-	waitCounter = Count;
+	fadeFromFactor = factor;
 }
 
 void GlobalTimer::AddAnimation(ControlAnimation* ctlanim, unsigned long time)

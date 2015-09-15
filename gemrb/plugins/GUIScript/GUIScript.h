@@ -38,6 +38,7 @@ namespace GemRB {
 #define SV_BPP 0
 #define SV_WIDTH 1
 #define SV_HEIGHT 2
+#define SV_GAMEPATH 3
 
 class GUIScript : public ScriptEngine {
 public:
@@ -59,7 +60,7 @@ public:
 	/** Exec a single File */
 	void ExecFile(const char* file);
 	/** Exec a single String */
-	void ExecString(const char* string);
+	void ExecString(const char* string, bool feedback=false);
 	/** lets hope this one can be here without screwing up the general interface */
 	PyObject *RunFunction(const char* moduleName, const char* fname, PyObject* pArgs, bool report_error = true);
 	PyObject* ConstructObject(const char* classname, int arg);

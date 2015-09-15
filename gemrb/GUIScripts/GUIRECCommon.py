@@ -19,9 +19,10 @@
 # code shared between the common GUIREC and that of iwd2 (pst)
 import GemRB
 import GameCheck
+import GUICommon
 import Portrait
 from GUIDefines import *
-from ie_stats import IE_SEX, IE_CLASS, IE_MC_FLAGS, MC_EXPORTABLE
+from ie_stats import IE_SEX, IE_RACE, IE_MC_FLAGS, MC_EXPORTABLE
 from ie_restype import RES_WAV
 
 BiographyWindow = None
@@ -233,15 +234,15 @@ def OpenCustomPortraitWindow ():
 
 	# Portrait List Large
 	PortraitList1 = SubSubCustomizeWindow.GetControl (2)
-	RowCount1 = PortraitList1.GetPortraits (0)
-	PortraitList1.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, LargeCustomPortrait)
+	RowCount1 = PortraitList1.ListResources (CHR_PORTRAITS, 0)
+	PortraitList1.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, LargeCustomPortrait)
 	GemRB.SetVar ("Row1", RowCount1)
 	PortraitList1.SetVarAssoc ("Row1",RowCount1)
 
 	# Portrait List Small
 	PortraitList2 = SubSubCustomizeWindow.GetControl (3)
-	RowCount2 = PortraitList2.GetPortraits (1)
-	PortraitList2.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, SmallCustomPortrait)
+	RowCount2 = PortraitList2.ListResources (CHR_PORTRAITS, 1)
+	PortraitList2.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, SmallCustomPortrait)
 	GemRB.SetVar ("Row2", RowCount2)
 	PortraitList2.SetVarAssoc ("Row2",RowCount2)
 
@@ -312,11 +313,7 @@ def OpenSoundWindow ():
 	SubCustomizeWindow = GemRB.LoadWindow (20)
 
 	VoiceList = SubCustomizeWindow.GetControl (5)
-	VoiceList.SetFlags (IE_GUI_TEXTAREA_SELECTABLE)
-
-	VoiceList.SetVarAssoc ("Selected", 0)
-	VoiceList.GetCharSounds()
-	VoiceList.SelectText (OldVoiceSet)
+	VoiceList.ListResources(CHR_SOUNDS)
 
 	PlayButton = SubCustomizeWindow.GetControl (7)
 	PlayButton.SetText (17318)
@@ -387,10 +384,34 @@ def OpenScriptWindow ():
 	SubCustomizeWindow = GemRB.LoadWindow (11)
 
 	ScriptTextArea = SubCustomizeWindow.GetControl (2)
-	ScriptTextArea.SetFlags (IE_GUI_TEXTAREA_SELECTABLE)
-	FillScriptList ()
+	scriptCount = ScriptTextArea.ListResources (CHR_SCRIPTS)
+	defaultCount = ScriptsTable.GetRowCount ()
+
+	options = []
+	tat = ScriptTextArea.QueryText ().split("\n")
+	tat.pop() # last item is empty
+	for i in range (scriptCount):
+		script = tat[i]
+		if i < defaultCount:
+			GemRB.SetToken ("script", ScriptsTable.GetRowName (i))
+			title = ScriptsTable.GetValue (i,0)
+			if title!=-1:
+				  desc = ScriptsTable.GetValue (i,1)
+				  txt = GemRB.GetString (title)
+				  if (desc!=-1):
+					  txt += GemRB.GetString (desc) + "\n"
+				  options.append(txt)
+			else:
+				  options.append (ScriptsTable.GetRowName (i) + "\n")
+		else:
+			GemRB.SetToken ("script", script)
+			options.append (17167)
+	ScriptTextArea.SetOptions (options)
+
 	pc = GemRB.GameGetSelectedPCSingle ()
 	script = GemRB.GetPlayerScript (pc)
+	if script == None:
+		script = "None"
 	scriptindex = ScriptsTable.GetRowIndex (script)
 	GemRB.SetVar ("Selected", scriptindex)
 	ScriptTextArea.SetVarAssoc ("Selected", scriptindex)
@@ -408,27 +429,9 @@ def OpenScriptWindow ():
 
 	DoneButton.SetEvent (IE_GUI_BUTTON_ON_PRESS, DoneScriptWindow)
 	CancelButton.SetEvent (IE_GUI_BUTTON_ON_PRESS, CloseSubCustomizeWindow)
-	ScriptTextArea.SetEvent (IE_GUI_TEXTAREA_ON_CHANGE, UpdateScriptSelection)
+	ScriptTextArea.SetEvent (IE_GUI_TEXTAREA_ON_SELECT, UpdateScriptSelection)
 
 	SubCustomizeWindow.ShowModal (MODAL_SHADOW_GRAY)
-	return
-
-def FillScriptList ():
-	global ScriptTextArea
-
-	ScriptTextArea.Clear ()
-	row = ScriptsTable.GetRowCount ()
-	for i in range (row):
-		GemRB.SetToken ("script", ScriptsTable.GetRowName (i) )
-		title = ScriptsTable.GetValue (i,0)
-		if title!=-1:
-			desc = ScriptsTable.GetValue (i,1)
-			txt = GemRB.GetString (title)
-			if (desc!=-1):
-				txt += GemRB.GetString (desc)
-			ScriptTextArea.Append (txt+"\n", -1)
-		else:
-			ScriptTextArea.Append (ScriptsTable.GetRowName (i)+"\n" ,-1)
 	return
 
 def DoneScriptWindow ():
@@ -450,8 +453,8 @@ def RevertBiography():
 	if GameCheck.IsIWD2():
 		BioTable = GemRB.LoadTable ("bios")
 		pc = GemRB.GameGetSelectedPCSingle ()
-		Class = GemRB.GetPlayerStat (pc, IE_CLASS)
-		BioStrRef = BioTable.GetValue(Class,1) # TODO: check if it is really class ordered and what happens for multiclassed chars
+		ClassName = GUICommon.GetClassRowName (pc)
+		BioStrRef = BioTable.GetValue (ClassName, "BIO")
 	else:
 		BioStrRef = 33347
 	TextArea.SetText (BioStrRef)
@@ -470,7 +473,7 @@ def OpenBiographyEditWindow ():
 	if BioStrRef != 33347:
 		Changed = 1
 
-	# TODO: check if this is really needed
+	# 23 and 24 were deleted and replaced in iwd
 	if GameCheck.IsIWD1() or GameCheck.IsIWD2():
 		SubCustomizeWindow = GemRB.LoadWindow (51)
 	else:
@@ -486,8 +489,10 @@ def OpenBiographyEditWindow ():
 	DoneButton.SetText (11973)
 	DoneButton.SetFlags (IE_GUI_BUTTON_DEFAULT, OP_OR)
 
+	ScrollbarID = 6
 	if GameCheck.IsIWD1() or GameCheck.IsIWD2():
 		RevertButton = SubCustomizeWindow.GetControl (6)
+		ScrollbarID = 3
 	else:
 		RevertButton = SubCustomizeWindow.GetControl (3)
 	RevertButton.SetText (2240)
@@ -499,7 +504,7 @@ def OpenBiographyEditWindow ():
 	CancelButton.SetFlags (IE_GUI_BUTTON_CANCEL, OP_OR)
 
 	TextArea = SubCustomizeWindow.GetControl (4)
-	TextArea.SetBufferLength (65535)
+	TextArea = TextArea.ConvertEdit (ScrollbarID)
 	TextArea.SetText (BioStrRef)
 
 	ClearButton.SetEvent (IE_GUI_BUTTON_ON_PRESS, ClearBiography)
@@ -508,6 +513,7 @@ def OpenBiographyEditWindow ():
 	CancelButton.SetEvent (IE_GUI_BUTTON_ON_PRESS, CloseSubCustomizeWindow)
 
 	SubCustomizeWindow.ShowModal (MODAL_SHADOW_GRAY)
+	TextArea.SetStatus (IE_GUI_CONTROL_FOCUSED) # DO NOT MOVE near the rest of TextArea handling
 	return
 
 def ClearBiography():
@@ -542,7 +548,10 @@ def OpenBiographyWindow ():
 
 	TextArea = Window.GetControl (0)
 	pc = GemRB.GameGetSelectedPCSingle ()
-	TextArea.SetText (GemRB.GetPlayerString (pc, BioStrRefSlot) )
+	if GameCheck.IsBG1 () and GemRB.GetPlayerName (pc, 2) == 'none':
+		TextArea.SetText (GetProtagonistBiography (pc))
+	else:
+		TextArea.SetText (GemRB.GetPlayerString (pc, BioStrRefSlot))
 
 	# Done
 	Button = Window.GetControl (2)
@@ -567,6 +576,17 @@ def CloseBiographyWindow ():
 			GUIREC.InformationWindow.SetVisible (WINDOW_VISIBLE)
 	return
 
+def GetProtagonistBiography (pc):
+	BioTable = GemRB.LoadTable ("bios")
+	racestrings = [ 15895, 15891, 15892, 15890, 15893, 15894 ]
+
+	ClassName = GUICommon.GetClassRowName (pc)
+	bio = BioTable.GetValue (ClassName, "BIO", GTV_REF)
+	race = GemRB.GetPlayerStat (pc, IE_RACE)
+	if race <= 6:
+		bio += "\n\n" + GemRB.GetString (racestrings[race-1])
+	return bio
+
 def OpenExportWindow ():
 	global ExportWindow, NameField, ExportDoneButton
 
@@ -576,7 +596,7 @@ def OpenExportWindow ():
 	TextArea.SetText (10962)
 
 	TextArea = ExportWindow.GetControl (0)
-	TextArea.GetCharacters ()
+	TextArea.ListResources (CHR_EXPORTS)
 
 	ExportDoneButton = ExportWindow.GetControl (4)
 	ExportDoneButton.SetText (11973)

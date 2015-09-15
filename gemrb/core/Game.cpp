@@ -41,7 +41,43 @@
 #include "System/DataStream.h"
 #include "System/StringBuffer.h"
 
+#include <algorithm>
+#include <iterator>
+#include <vector>
+
 namespace GemRB {
+
+struct HealingResource {
+	ieResRef resref;
+	Actor *caster;
+	ieWord amounthealed;
+	ieWord amount;
+	HealingResource(ieResRef ref, Actor *cha, ieWord ah, ieWord a)
+		: caster(cha), amounthealed(ah), amount(a) {
+		CopyResRef(resref, ref);
+	}
+	HealingResource() {
+		CopyResRef(resref, "");
+		amount = 0;
+		amounthealed = 0;
+		caster = NULL;
+	}
+	bool operator < (const HealingResource &str) const {
+		return (amounthealed < str.amounthealed);
+	}
+};
+
+struct Injured {
+	int hpneeded;
+	Actor *character;
+	Injured(int hps, Actor *cha)
+		: hpneeded(hps), character(cha) {
+		// already done
+	}
+	bool operator < (const Injured &str) const {
+		return (hpneeded < str.hpneeded);
+	}
+};
 
 #define MAX_MAPS_LOADED 1
 
@@ -199,6 +235,14 @@ static bool IsAlive(Actor *pc)
 		return false;
 	}
 	return true;
+}
+
+void Game::ReversePCs()
+{
+	for (unsigned int slot=0; slot<PCs.size(); slot++) {
+		PCs[slot]->InParty = PCs.size() - PCs[slot]->InParty + 1;
+	}
+	core->SetEventFlag(EF_PORTRAIT|EF_SELECTION);
 }
 
 int Game::FindPlayer(unsigned int partyID)
@@ -543,6 +587,17 @@ bool Game::SelectPCSingle(int index)
 int Game::GetSelectedPCSingle() const
 {
 	return SelectedSingle;
+}
+
+Actor* Game::GetSelectedPCSingle(bool onlyalive)
+{
+	Actor *pc = FindPC(SelectedSingle);
+	if (!pc) return NULL;
+
+	if (onlyalive && !IsAlive(pc)) {
+		return NULL;
+	}
+	return pc;
 }
 
 /*
@@ -1156,22 +1211,30 @@ void Game::LoadCRTable()
 	}
 }
 
+// FIXME: figure out the real mechanism
 int Game::GetXPFromCR(int cr)
 {
 	if (!crtable) LoadCRTable();
-	if (crtable) {
-		int size = GetPartySize(true);
-		if (!size) return 0; // everyone just died anyway
-		int level = GetPartyLevel(true) / size;
-		if (cr+1>=MAX_CRLEVEL) {
-			cr=MAX_CRLEVEL-2;
-		}
-		Log(MESSAGE, "Game", "Challenge Rating: %d, party level: %d", cr, level);
-		// it also has a column for cr 0.25 and 0.5
-		return crtable[level-1][cr+1];
+	if (!crtable) {
+		Log(ERROR, "Game", "Cannot find moncrate.2da!");
+		return 0;
 	}
-	Log(ERROR, "Game", "Cannot find moncrate.2da!");
-	return 0;
+
+	int size = GetPartySize(true);
+	if (!size) return 0; // everyone just died anyway
+	// NOTE: this is an average of averages; if it turns out to be wrong,
+	// compute the party average directly
+	int level = GetPartyLevel(true) / size;
+	if (cr >= MAX_CRLEVEL) {
+		cr = MAX_CRLEVEL;
+	} else if (cr-1 < 0) {
+		cr = 1;
+	}
+	Log(MESSAGE, "Game", "Challenge Rating: %d, party level: %d", cr, level);
+	// it also has a column for cr 0.25 and 0.5, so let's treat cr as a 1-based index
+	// but testing shows something else affects it further, so we divide by 2 to match
+	// the net is full of claims of halved values, so perhaps just a quick final rebalancing tweak
+	return crtable[level-1][cr-1]/2;
 }
 
 void Game::ShareXP(int xp, int flags)
@@ -1299,15 +1362,9 @@ void Game::SetReputation(ieDword r)
 	}
 }
 
-void Game::SetControlStatus(int value, int mode)
+void Game::SetControlStatus(unsigned int value, int mode)
 {
-	switch(mode) {
-		case BM_OR: ControlStatus|=value; break;
-		case BM_NAND: ControlStatus&=~value; break;
-		case BM_SET: ControlStatus=value; break;
-		case BM_AND: ControlStatus&=value; break;
-		case BM_XOR: ControlStatus^=value; break;
-	}
+	core->SetBits(ControlStatus, value, mode);
 	core->SetEventFlag(EF_CONTROL);
 }
 
@@ -1328,7 +1385,7 @@ void Game::AddGold(ieDword add)
 }
 
 //later this could be more complicated
-void Game::AdvanceTime(ieDword add)
+void Game::AdvanceTime(ieDword add, bool fatigue)
 {
 	ieDword h = GameTime/(300*AI_UPDATE_TIME);
 	GameTime+=add;
@@ -1339,6 +1396,14 @@ void Game::AdvanceTime(ieDword add)
 		core->GetGUIScriptEngine()->RunFunction("GUICommonWindows", "UpdateClock");
 	}
 	Ticks+=add*interval;
+	if (!fatigue) {
+		// update everyone in party, so they think no time has passed
+		// nobody else, including familiars, gets luck penalties from fatigue
+		for (unsigned int i=0; i<PCs.size(); i++) {
+			PCs[i]->IncreaseLastRested(add);
+		}
+	}
+
 	//change the tileset if needed
 	Map *map = GetCurrentArea();
 	if (map && map->ChangeMap(IsDay())) {
@@ -1468,7 +1533,7 @@ void Game::UpdateScripts()
 	//this is used only for the death delay so far
 	if (event_handler) {
 		if (!event_timer) {
-			event_handler->call();
+			event_handler();
 			event_handler = NULL;
 		}
 		event_timer--;
@@ -1613,11 +1678,28 @@ bool Game::RestParty(int checks, int dream, int hp)
 			displaymsg->DisplayConstantString( STR_MAYNOTREST, DMC_RED );
 			return false;
 		}
-		//you may not rest here, find an inn
-		if (!(area->AreaType&(AT_OUTDOOR|AT_FOREST|AT_DUNGEON|AT_CAN_REST) ))
-		{
-			displaymsg->DisplayConstantString( STR_MAYNOTREST, DMC_RED );
-			return false;
+
+		if (core->HasFeature(GF_AREA_OVERRIDE)) {
+			// pst doesn't care about area types (see comments near AF_NOSAVE definition)
+			// and repurposes these area flags!
+			if (area->AreaFlags&(AF_TUTORIAL|AF_DEADMAGIC)/* == (AF_TUTORIAL|AF_DEADMAGIC)*/) {
+				displaymsg->DisplayConstantString(STR_MAYNOTREST, DMC_RED); // get permission 38587
+				return false;
+			/* TODO: add all the other strings
+			} else if (area->AreaFlags&AF_TUTORIAL) {
+				displaymsg->DisplayConstantString(STR_MAYNOTREST, DMC_RED); // here 34601
+				return false;
+			} else if (area->AreaFlags&AF_DEADMAGIC) {
+				displaymsg->DisplayConstantString(STR_MAYNOTREST, DMC_RED); // actual STR_MAYNOTREST
+				return false;*/
+			}
+		} else {
+			//you may not rest here, find an inn
+			if (!(area->AreaType&(AT_OUTDOOR|AT_FOREST|AT_DUNGEON|AT_CAN_REST) ))
+			{
+				displaymsg->DisplayConstantString( STR_MAYNOTREST, DMC_RED );
+				return false;
+			}
 		}
 		//area encounters
 		// also advances gametime (so partial rest is possible)
@@ -1674,6 +1756,7 @@ bool Game::RestParty(int checks, int dream, int hp)
 			PlayerDream();
 		// all games have these bg1 leftovers, but only bg2 replaced the content
 		} else if (gamedata->GetResource("drmtxt2", IE_2DA_CLASS_ID, true)->Size() > 0) {
+			cutscene = true;
 			TextDream();
 		}
 
@@ -1705,7 +1788,7 @@ bool Game::RestParty(int checks, int dream, int hp)
 
 	//this would be bad
 	if (hrsindex == -1 || restindex == -1) return cutscene;
-	tmpstr = core->GetString(hrsindex, 0);
+	tmpstr = core->GetCString(hrsindex, 0);
 	//as would this
 	if (!tmpstr) return cutscene;
 
@@ -1715,46 +1798,122 @@ bool Game::RestParty(int checks, int dream, int hp)
 	return cutscene;
 }
 
+// calculate an estimate of spell's healing power
+inline static int CastOnRestHealingAmount(Actor *caster, SpecialSpellType &specialSpell)
+{
+	int healing = specialSpell.amount;
+	if (specialSpell.bonus_limit > 0) {
+		// cheating a bit, but the whole function is a heuristic anyway
+		int bonusLevel = caster->GetAnyActiveCasterLevel();
+		if (bonusLevel > specialSpell.bonus_limit) bonusLevel = specialSpell.bonus_limit;
+		healing += bonusLevel; // 1 HP per level, usually corresponding to the die bonus
+	}
+	return healing;
+}
+
 // heal on rest and similar
 void Game::CastOnRest()
 {
+	typedef std::vector<HealingResource> RestSpells;
+	typedef std::vector<Injured> RestTargets;
+
 	ieDword tmp = 0;
 	core->GetDictionary()->Lookup("Heal Party on Rest", tmp);
 	int specialCount = core->GetSpecialSpellsCount();
+	if (!tmp || specialCount == -1) {
+		return;
+	}
 
-	if (tmp && specialCount != -1) {
-		int ps = GetPartySize(true);
-		int ps2 = ps;
-		std::vector<Actor *> injurees;
-		for (int idx = 1; idx <= ps; idx++) {
-			Actor *tar = FindPC(idx);
-			if (tar && tar->GetStat(IE_HITPOINTS) < tar->GetStat(IE_MAXHITPOINTS)) {
-				injurees.push_back(tar);
-			}
+	RestTargets wholeparty;
+	int ps = GetPartySize(true);
+	int ps2 = ps;
+	for (int idx = 1; idx <= ps; idx++) {
+		Actor *tar = FindPC(idx);
+		if (tar) {
+			ieWord hpneeded = tar->GetStat(IE_MAXHITPOINTS) - tar->GetStat(IE_HITPOINTS);
+			wholeparty.push_back(Injured(hpneeded, tar));
 		}
-		if (injurees.empty()) injurees = PCs; // enable some nonhealing magic too
-
-		SpellDescType *special_spells = core->GetSpecialSpells();
-		while (specialCount--) {
-			if (special_spells[specialCount].value & SP_REST) {
-				if (injurees.empty()) injurees = PCs; // enable some nonhealing magic too
-				// check each party member for the spell
-				while (ps--) {
-					Actor *tar = GetPC(ps, true);
-					while (tar && tar->spellbook.HaveSpell(special_spells[specialCount].resref, 0)) {
-						// we have the spell, so cast it on most injured
-						// NOTE: no distinction is made about the potency of spells
-						Actor *injuree = injurees[0];
-						tar->DirectlyCastSpell(injuree, special_spells[specialCount].resref, 0, 1, true, true, true);
-						if (injuree->GetStat(IE_HITPOINTS) == injuree->GetStat(IE_MAXHITPOINTS)) {
-							if (!injurees.empty()) {
-								injurees.erase(injurees.begin());
-							}
-						}
+	}
+	// Following algorithm works thus:
+	// - If at any point there are no more injured party members, stop
+	// (amount of healing done is an estimation)
+	// - cast party members' all heal-all spells
+	// - repeat:
+	//       cast the most potent healing spell on the most injured member
+	SpecialSpellType *special_spells = core->GetSpecialSpells();
+	std::sort(wholeparty.begin(), wholeparty.end());
+	RestSpells healingspells;
+	RestSpells nonhealingspells;
+	while (specialCount--) {
+		SpecialSpellType &specialSpell = special_spells[specialCount];
+		// Cast multi-target healing spells
+		if ((specialSpell.flags & (SP_REST|SP_HEAL_ALL)) == (SP_REST|SP_HEAL_ALL)) {
+			while (ps-- && wholeparty.back().hpneeded > 0) {
+				Actor *tar = GetPC(ps, true);
+				while (tar && tar->spellbook.HaveSpell(specialSpell.resref, 0) && wholeparty.back().hpneeded > 0) {
+					tar->DirectlyCastSpell(tar, specialSpell.resref, 0, 1, true);
+					for (RestTargets::iterator injuree=wholeparty.begin(); injuree != wholeparty.end(); ++injuree) {
+						injuree->hpneeded -= CastOnRestHealingAmount(tar, specialSpell);
 					}
 				}
-				ps = ps2;
+				std::sort(wholeparty.begin(), wholeparty.end());
 			}
+			ps = ps2;
+		// Gather rest of the spells
+		} else if (specialSpell.flags & SP_REST) {
+			while (ps--) {
+				Actor *tar = GetPC(ps, true);
+				if (tar && tar->spellbook.HaveSpell(specialSpell.resref, 0)) {
+					HealingResource resource;
+					resource.caster = tar;
+					CopyResRef(resource.resref, specialSpell.resref);
+					resource.amount = 0;
+					resource.amounthealed = CastOnRestHealingAmount(tar, specialSpell);
+					// guess the booktype; one will definitely match due to HaveSpell above
+					int booktype = 0;
+					while (resource.amount == 0 && booktype < tar->spellbook.GetTypes()) {
+						resource.amount = tar->spellbook.CountSpells(specialSpell.resref, booktype, 0);
+						booktype++;
+					}
+					if (resource.amount == 0) continue;
+					if (resource.amounthealed > 0 ) {
+						healingspells.push_back(resource);
+					} else {
+						nonhealingspells.push_back(resource);
+					}
+				}
+			}
+			ps = ps2;
+		}
+	}
+	std::sort(wholeparty.begin(), wholeparty.end());
+	std::sort(healingspells.begin(), healingspells.end());
+	// Heal who's still injured
+	while (!healingspells.empty() && wholeparty.back().hpneeded > 0) {
+		Injured &mostInjured = wholeparty.back();
+		HealingResource &mostHealing = healingspells.back();
+		mostHealing.caster->DirectlyCastSpell(mostInjured.character, mostHealing.resref, 0, 1, true);
+		mostHealing.amount--;
+		mostInjured.hpneeded -= mostHealing.amounthealed;
+		std::sort(wholeparty.begin(), wholeparty.end());
+		if (mostHealing.amount == 0) {
+			healingspells.pop_back();
+		}
+	}
+	// Other rest-time spells
+	// Everybody gets something while stocks last!
+	// In other words a better priorization of targets is needed
+	ieWord spelltarget = 0;
+	while (!nonhealingspells.empty()) {
+		HealingResource &restingSpell = nonhealingspells.back();
+		restingSpell.caster->DirectlyCastSpell(wholeparty.at(spelltarget).character, restingSpell.resref, 0, 1, true);
+		restingSpell.amount--;
+		if (restingSpell.amount == 0) {
+			nonhealingspells.pop_back();
+		}
+		spelltarget++;
+		if (spelltarget == wholeparty.size()) {
+			spelltarget = 0;
 		}
 	}
 }
@@ -1851,19 +2010,25 @@ bool Game::IsDay()
 void Game::ChangeSong(bool always, bool force)
 {
 	int Song;
+	static int BattleSong = 0;
 
 	if (CombatCounter) {
 		//battlesong
 		Song = SONG_BATTLE;
+		BattleSong++;
 	} else {
 		//will select SONG_DAY or SONG_NIGHT
 		Song = (GameTime/AI_UPDATE_TIME)%7200/3600;
+		BattleSong = 0;
 	}
 	//area may override the song played (stick in battlemusic)
 	//always transition gracefully with ChangeSong
 	//force just means, we schedule the song for later, if currently
 	//is playing
-	area->PlayAreaSong( Song, always, force );
+	// make sure we only start one battle song at a time, since we're called once per party member
+	if (BattleSong < 2) {
+		area->PlayAreaSong( Song, always, force );
+	}
 }
 
 /* this method redraws weather. If update is false,
@@ -2007,6 +2172,12 @@ ieByte *Game::AllocateMazeData()
 	}
 	mazedata = (ieByte*)malloc(MAZE_DATA_SIZE);
 	return mazedata;
+}
+
+int Game::RemainingTimestop() const
+{
+	int remaining = timestop_end - GameTime;
+	return remaining > 0 ? remaining : 0;
 }
 
 bool Game::IsTimestopActive() const

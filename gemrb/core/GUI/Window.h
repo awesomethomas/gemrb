@@ -60,6 +60,10 @@ class Sprite2D;
  */
 
 class GEM_EXPORT Window {
+private:
+	void DrawBackground(const Region* rgn) const;
+	void ControlRemoved(const Control *ctrl);
+
 public: 
 	Window(unsigned short WindowID, unsigned short XPos, unsigned short YPos,
 		unsigned short Width, unsigned short Height);
@@ -79,12 +83,14 @@ public:
 	Control* GetControl(unsigned short x, unsigned short y, bool ignore=0);
 	/** Returns the Control by Index */
 	Control* GetControl(unsigned short i) const;
+	/** Returns the Control by Index */
+	int GetControlIndex(ieDword id) const;
 	/** Returns the number of Controls */
 	unsigned int GetControlCount() const;
 	/** Returns true if ctrl is valid and ctrl->ControlID is ID */
 	bool IsValidControl(unsigned short ID, Control *ctrl) const;
 	/** Deletes the xth. Control */
-	void DelControl(unsigned short i);
+	Control* RemoveControl(unsigned short i);
 	/** Returns the Default Control which may be a button/gamecontrol atm */
 	Control* GetDefaultControl(unsigned int ctrltype) const;
 	/** Returns the Control which should get mouse scroll events */
@@ -103,8 +109,6 @@ public:
 	Control* GetMouseFocus() const;
 	/** Redraw all the Window */
 	void Invalidate();
-	/** Redraw enough to update the specified Control */
-	void InvalidateForControl(Control *ctrl);
 	/** Redraw controls of the same group */
 	void RedrawControls(const char* VarName, unsigned int Sum);
 	/** Links a scrollbar to a text area */
@@ -149,8 +153,6 @@ private: // Private attributes
 	Control* lastMouseFocus;
 	/** Last Control under mouse */
 	Control* lastOver;
-	/** Regions which need to be redrawn */
-	std::vector< Region> clip_regions;
 
 public:
 	void release(void);

@@ -148,7 +148,7 @@ def Exportable(pc):
 	return True
 
 def UpdateRecordsWindow ():
-	global stats_overview, alignment_help
+	global alignment_help
 
 	Window = RecordsWindow
 	if not RecordsWindow:
@@ -283,9 +283,8 @@ def UpdateRecordsWindow ():
 		Label.SetText (7199)
 
 	# help, info textarea
-	stats_overview = GetStatOverview (pc)
 	Text = Window.GetControl (45)
-	Text.SetText (stats_overview)
+	Text.SetText (GetStatOverview (pc))
 	#TODO: making window visible/shaded depending on the pc's state
 	Window.SetVisible (WINDOW_VISIBLE)
 	return
@@ -316,16 +315,6 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 	GB = lambda s, pc=pc: GemRB.GetPlayerStat (pc, s, 1)
 	GA = lambda s, col, pc=pc: GemRB.GetAbilityBonus (s, col, GS (s) )
 
-	# everyone but bg1 has it somewhere
-	if GameCheck.IsBG2():
-		str_None = GemRB.GetString (61560)
-	elif GameCheck.IsBG1():
-		str_None = -1
-	elif GameCheck.IsPST():
-		str_None = GemRB.GetString (41275)
-	else:
-		str_None = GemRB.GetString (17093)
-
 	stats = []
 	cdet = GemRB.GetCombatDetails(pc, 0)
 	tohit = cdet["ToHitStats"]
@@ -346,17 +335,16 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 
 	if GS (IE_STATE_ID) & STATE_DEAD:
 		stats.append ( (11829,1,'c') ) # DEAD
-		stats.append (None)
+		stats.append ("\n")
 
 	if Multi[0] > 1: # we're multiclassed
 		print "\tMulticlassed"
 		Levels = [GemRB.GetPlayerStat (pc, IE_LEVEL), GemRB.GetPlayerStat (pc, IE_LEVEL2), GemRB.GetPlayerStat (pc, IE_LEVEL3)]
 
 		stats.append ( (19721,1,'c') )
-		stats.append (None)
 		for i in range (Multi[0]):
 			Class = GUICommon.GetClassRowName (Multi[i+1], "class")
-			ClassTitle = GemRB.GetString (CommonTables.Classes.GetValue (Class, "CAP_REF"))
+			ClassTitle = CommonTables.Classes.GetValue (Class, "CAP_REF", GTV_REF)
 			GemRB.SetToken ("CLASS", ClassTitle)
 			GemRB.SetToken ("LEVEL", str (Levels[i]+LevelDiff[i]-int(LevelDrain/Multi[0])) )
 			GemRB.SetToken ("EXPERIENCE", str (XP/Multi[0]) )
@@ -366,13 +354,12 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 			else:
 				GemRB.SetToken ("NEXTLEVEL", LUCommon.GetNextLevelExp (Levels[i]+LevelDiff[i], Class) )
 				stats.append ( (GemRB.GetString (16480),"",'d') )
-			stats.append (None)
+			stats.append ("\n")
 			print "\t\tClass (Level):",Class,"(",Levels[i],")"
 
 	elif Dual[0] > 0: # dual classed; first show the new class
 		print "\tDual classed"
 		stats.append ( (19722,1,'c') )
-		stats.append (None)
 
 		Levels = [GemRB.GetPlayerStat (pc, IE_LEVEL), GemRB.GetPlayerStat (pc, IE_LEVEL2), GemRB.GetPlayerStat (pc, IE_LEVEL3)]
 
@@ -384,7 +371,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 		Levels[0] += LevelDiff[0]
 
 		Class = CommonTables.Classes.GetRowName (Dual[2])
-		ClassTitle = GemRB.GetString (CommonTables.Classes.GetValue (Class, "CAP_REF"))
+		ClassTitle = CommonTables.Classes.GetValue (Class, "CAP_REF", GTV_REF)
 		GemRB.SetToken ("CLASS", ClassTitle)
 		GemRB.SetToken ("LEVEL", str (Levels[0]-LevelDrain))
 		XP2 = GemRB.GetPlayerStat (pc, IE_XP)
@@ -395,14 +382,14 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 		else:
 			GemRB.SetToken ("NEXTLEVEL", LUCommon.GetNextLevelExp (Levels[0], Class) )
 			stats.append ( (GemRB.GetString (16480),"",'d') )
-		stats.append (None)
+		stats.append ("\n")
 
 		# the first class (shown second)
 		if Dual[0] == 1:
-			ClassTitle = GemRB.GetString (CommonTables.KitList.GetValue (Dual[1], 2))
+			ClassTitle = CommonTables.KitList.GetValue (Dual[1], 2, GTV_REF)
 		elif Dual[0] == 2:
 			ClassTitle = GUICommon.GetClassRowName(Dual[1], "index")
-			ClassTitle = GemRB.GetString (CommonTables.Classes.GetValue (ClassTitle, "CAP_REF"))
+			ClassTitle = CommonTables.Classes.GetValue (ClassTitle, "CAP_REF", GTV_REF)
 		GemRB.SetToken ("CLASS", ClassTitle)
 		GemRB.SetToken ("LEVEL", str (Levels[1]) )
 
@@ -425,7 +412,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 			stats.append ( (19719,1,'c') )
 		else:
 			stats.append ( (19720,1,'c') )
-		stats.append (None)
+		stats.append ("\n")
 	else: # single classed
 		print "\tSingle classed"
 		Level = GemRB.GetPlayerStat (pc, IE_LEVEL) + LevelDiff[0]
@@ -437,17 +424,17 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 		else:
 			GemRB.SetToken ("NEXTLEVEL", LUCommon.GetNextLevelExp (Level, Class) )
 			stats.append ( (16480,1,'c') )
-		stats.append (None)
+		stats.append ("\n")
 		print "\t\tClass (Level):",Class,"(",Level,")"
 
-	# check to see if we have a level diff anywhere
+	# effect icons
+	# but don't display them in levelup stat view
 	if sum (LevelDiff) == 0:
 		effects = GemRB.GetPlayerStates (pc)
 		if len (effects):
 			for c in effects:
 				tmp = StateTable.GetValue (str(ord(c)-66), "DESCRIPTION")
 				stats.append ( (tmp,c,'a') )
-			stats.append (None)
 
 	#proficiencies
 	stats.append ( (8442,1,'c') )
@@ -486,8 +473,8 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 		HateTable = GemRB.LoadTable ("haterace")
 		Racist = HateTable.FindValue (1, HatedRace)
 		if Racist != -1:
-			HatedRace = HateTable.GetValue (Racist, 0)
-			stats.append ( (15982, GemRB.GetString (HatedRace), '') )
+			HatedRace = HateTable.GetValue (Racist, 0, GTV_REF)
+			stats.append ( (15982, HatedRace, '') )
 
 	# these skills were new in bg2
 	if GameCheck.IsBG2() or GameCheck.IsIWD1():
@@ -505,7 +492,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 	#script
 	aiscript = GemRB.GetPlayerScript (pc )
 	stats.append ( (2078, aiscript, '') )
-	stats.append (None)
+	stats.append ("\n")
 
 	# 17379 Saving throws
 	stats.append (17379)
@@ -519,7 +506,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 	stats.append ( (17383, IE_SAVEVSBREATH, 's') )
 	# 17384 Spells
 	stats.append ( (17384, IE_SAVEVSSPELL, 's') )
-	stats.append (None)
+	stats.append ("\n")
 
 	# 9466 Weapon proficiencies
 	stats.append (9466)
@@ -542,7 +529,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 			stat = stat + IE_PROFICIENCYBASTARDSWORD
 		if text < 0x20000:
 			stats.append ( (text, GS (stat)&0x07, '+') )
-	stats.append (None)
+	stats.append ("\n")
 
 	# 11766 AC Bonuses
 	stats.append (11766)
@@ -554,7 +541,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 	stats.append ((11769, GS (IE_ACPIERCINGMOD), 'p'))
 	# 11768 AC vs. Slashing
 	stats.append ((11768, GS (IE_ACSLASHINGMOD), 'p'))
-	stats.append (None)
+	stats.append ("\n")
 
 	# 10315 Ability bonuses
 	stats.append (10315)
@@ -587,7 +574,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 		stats.append ( (10343, GA (IE_INT,0), '%' ) )
 	# 10347 Reaction
 	stats.append ( (10347, GA (IE_REPUTATION,0), '0') )
-	stats.append (None)
+	stats.append ("\n")
 
 	# 10344 Bonus Priest spells
 	if GemRB.GetMemorizableSpellsCount (pc, IE_SPELL_TYPE_PRIEST, 0, 0)>0:
@@ -599,7 +586,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 			if base:
 				count = GemRB.GetMemorizableSpellsCount (pc, IE_SPELL_TYPE_PRIEST, level)
 				stats.append ( (GemRB.GetString (10345), count-base, 'r') )
-		stats.append (None)
+		stats.append ("\n")
 
 	# only bg2 displayed all the resistances, but it is useful information
 	# Resistances
@@ -654,7 +641,7 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 	stats.append ((11770, GS (IE_RESISTCRUSHING), '%'))
 	# Poison
 	stats.append ((14017, GS (IE_RESISTPOISON), '%'))
-	stats.append (None)
+	stats.append ("\n")
 
 	if GameCheck.IsBG2():
 		# Weapon Style bonuses
@@ -668,67 +655,80 @@ def GetStatOverview (pc, LevelDiff=[0,0,0]):
 			for col in range(WStyleTable.GetColumnCount()):
 				value = WStyleTable.GetValue (profcount, col)
 				stats.append ((bonusrefs[WStyleTable.GetColumnName(col)], value, ''))
-		stats.append (None)
+		stats.append ("\n")
+
+	# everyone but bg1 has it somewhere
+	if GameCheck.IsBG2():
+		str_None = GemRB.GetString (61560)
+	elif GameCheck.IsBG1():
+		str_None = -1
+	elif GameCheck.IsPST():
+		str_None = GemRB.GetString (41275)
+	else:
+		str_None = GemRB.GetString (17093)
 
 	res = []
-	lines = 0
 	for s in stats:
 		try:
 			strref, val, type = s
 			if val == 0 and type != '0':
 				continue
+			if val == None:
+				val = str_None
 			if type == '+': #pluses
-				res.append ("[capital=0]"+GemRB.GetString (strref) + ' '+ '+' * val)
+				res.append (GemRB.GetString (strref) + ' '+ '+' * val)
 			elif type == 'p': #a plus prefix if positive
 				if val > 0:
-					res.append ("[capital=0]" + GemRB.GetString (strref) + ' +' + str (val) )
+					res.append (GemRB.GetString (strref) + ' +' + str (val) )
 				else:
-					res.append ("[capital=0]" + GemRB.GetString (strref) + ' ' + str (val) )
+					res.append (GemRB.GetString (strref) + ' ' + str (val) )
 			elif type == 'r': #a plus prefix if positive, strref is an already resolved string
 				if val > 0:
-					res.append ("[capital=0]" + strref + ' +' + str (val) )
+					res.append (strref + ' +' + str (val) )
 				else:
-					res.append ("[capital=0]" + strref + ' ' + str (val) )
+					res.append (strref + ' ' + str (val) )
 			elif type == 's': #both base and (modified) stat, but only if they differ
 				base = GB (val)
 				stat = GS (val)
-				base_str = "[capital=0]" + GemRB.GetString (strref) + ': ' + str(stat)
+				base_str = GemRB.GetString (strref) + ': ' + str(stat)
 				if base == stat:
 					res.append (base_str)
 				else:
 					res.append (base_str + " (" + str(stat-base) + ")")
 			elif type == 'x': #x character before value
-				res.append ("[capital=0]"+GemRB.GetString (strref) +': x' + str (val) )
+				res.append (GemRB.GetString (strref) +': x' + str (val) )
 			elif type == 'a': #value (portrait icon) + string
-				res.append ("[capital=2]"+val+" "+GemRB.GetString (strref))
+				# '%' is the separator glyph in the states font
+				res.append ("[cap]" + val + "%[/cap][p]" + GemRB.GetString (strref) + "[/p]")
 			elif type == 'b': #strref is an already resolved string
-				res.append ("[capital=0]"+strref+": "+str (val))
+				res.append (strref+": "+str (val))
 			elif type == 'c': #normal string
-				res.append ("[capital=0]"+GemRB.GetString (strref))
+				res.append (GemRB.GetString (strref))
 			elif type == 'd': #strref is an already resolved string
-				res.append ("[capital=0]"+strref)
+				res.append (strref)
 			elif type == '0': #normal value
 				res.append (GemRB.GetString (strref) + ': ' + str (val))
 			else: #normal value + type character, for example percent sign
-				res.append ("[capital=0]"+GemRB.GetString (strref) + ': ' + str (val) + type)
-			lines = 1
+				res.append (GemRB.GetString (strref) + ': ' + str (val) + type)
 		except:
-			if s != None:
-				res.append ("[capital=0]"+ GemRB.GetString (s) )
-				lines = 0
+			if isinstance(s, basestring):
+				if s == len(s) * "\n": # check if the string is all newlines
+					# avoid "double" newlines (we use join later so we would get one more newline than is in s!)
+					res[-1] += s
+				else:
+					res.append (s);
 			else:
-				if not lines and str_None != -1:
-					res.append (str_None)
-				res.append ("")
-				lines = 0
+				res.append (GemRB.GetString (s) )				
 
+	# wrap the first part in a tag to prevent status icon drop cap
+	res[0] = "[p]" + res[0] + "[/p]"
 	return "\n".join (res)
 
 def GetReputation (repvalue):
 	table = GemRB.LoadTable ("reptxt")
 	if repvalue>20:
 		repvalue=20
-	txt = GemRB.GetString (table.GetValue (repvalue, 0) )
+	txt = table.GetValue (repvalue, 0, GTV_REF)
 	return txt+" ("+str (repvalue)+")"
 
 def OpenInformationWindow ():
@@ -873,35 +873,29 @@ def OpenKitInfoWindow ():
 	ClassName = GUICommon.GetClassRowName (pc)
 	Multi = GUICommon.HasMultiClassBits (pc)
 	Dual = GUICommon.IsDualClassed (pc, 1)
-
+	text = ""
 	if Multi and Dual[0] == 0: # true multi class
 		text = CommonTables.Classes.GetValue (ClassName, "DESC_REF")
-		TextArea.SetText (text)
-		KitInfoWindow.ShowModal (MODAL_SHADOW_GRAY)
-		return
+	else:
+		KitIndex = GUICommon.GetKitIndex (pc)
 
-	KitIndex = GUICommon.GetKitIndex (pc)
+		if Dual[0]: # dual class
+			# first (previous) kit or class of the dual class
+			if Dual[0] == 1:
+				text = CommonTables.KitList.GetValue (Dual[1], 3)
+			elif Dual[0] == 2:
+				text = CommonTables.Classes.GetValue (GUICommon.GetClassRowName(Dual[1], "index"), "DESC_REF")
+	
+			text += "\n"
+			text += CommonTables.Classes.GetValue (GUICommon.GetClassRowName(Dual[2], "index"), "DESC_REF")
+	
+		else: # ordinary class or kit
+			if KitIndex:
+				text = CommonTables.KitList.GetValue (KitIndex, 3)
+			else:
+				text = CommonTables.Classes.GetValue (ClassName, "DESC_REF")
 
-	if Dual[0]: # dual class
-		# first (previous) kit or class of the dual class
-		if Dual[0] == 1:
-			text = CommonTables.KitList.GetValue (Dual[1], 3)
-		elif Dual[0] == 2:
-			text = GUICommon.GetClassRowName(Dual[1], "index")
-			text = CommonTables.Classes.GetValue (text, "DESC_REF")
-
-		TextArea.SetText (text)
-		TextArea.Append ("\n\n")
-		text = GUICommon.GetClassRowName(Dual[2], "index")
-		text = CommonTables.Classes.GetValue (text, "DESC_REF")
-
-	else: # ordinary class or kit
-		if KitIndex:
-			text = CommonTables.KitList.GetValue (KitIndex, 3)
-		else:
-			text = CommonTables.Classes.GetValue (ClassName, "DESC_REF")
-
-	TextArea.Append (text)
+	TextArea.SetText (text)
 
 	KitInfoWindow.ShowModal (MODAL_SHADOW_GRAY)
 	return

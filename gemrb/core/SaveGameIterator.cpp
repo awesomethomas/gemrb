@@ -69,16 +69,24 @@ static void ParseGameDate(DataStream *ds, char *Date)
 	hours -= days*24;
 	char *a=NULL,*b=NULL,*c=NULL;
 
+	// pst has a nice single string for everything 41277 (individual ones lack tokens)
 	core->GetTokenDictionary()->SetAtCopy("GAMEDAYS", days);
-	if (days) {
-		if (days==1) a=core->GetString(10698);
-		else a=core->GetString(10697);
-	}
 	core->GetTokenDictionary()->SetAtCopy("HOUR", hours);
+	int dayref = displaymsg->GetStringReference(STR_DAY);
+	int daysref = displaymsg->GetStringReference(STR_DAYS);
+	if (dayref == daysref) {
+		strcat(Date, core->GetCString(41277));
+		return;
+	}
+
+	if (days) {
+		if (days==1) a = core->GetCString(dayref, 0);
+		else a = core->GetCString(daysref, 0);
+	}
 	if (hours || !a) {
-		if (a) b=core->GetString(10699);
-		if (hours==1) c=core->GetString(10701);
-		else c=core->GetString(10700);
+		if (a) b=core->GetCString(10699); // and
+		if (hours==1) c = core->GetCString(displaymsg->GetStringReference(STR_HOUR), 0);
+		else c = core->GetCString(displaymsg->GetStringReference(STR_HOURS), 0);
 	}
 	if (b) {
 		strcat(Date, a);
@@ -110,8 +118,12 @@ SaveGame::SaveGame(const char* path, const char* name, const char* prefix, const
 	struct stat my_stat;
 	PathJoinExt(nPath, Path, Prefix, "bmp");
 	memset(&my_stat,0,sizeof(my_stat));
-	stat( nPath, &my_stat );
-	strftime( Date, _MAX_PATH, "%c", localtime( (time_t*)&my_stat.st_mtime ) );
+	if (stat(nPath, &my_stat)) {
+		Log(ERROR, "SaveGameIterator", "Stat call failed, using dummy time!");
+		strlcpy(Date, "Sun 31 Feb 00:00:01 2099", _MAX_PATH);
+	} else {
+		strftime(Date, _MAX_PATH, "%c", localtime((time_t*)&my_stat.st_mtime));
+	}
 	manager.AddSource(Path, Name, PLUGIN_RESOURCE_DIRECTORY);
 	GameDate[0] = '\0';
 }
@@ -393,7 +405,10 @@ void SaveGameIterator::PruneQuickSave(const char *folder)
 	for(i=size;i--;) {
 		FormatQuickSavePath(from, myslots[i]);
 		FormatQuickSavePath(to, myslots[i]+1);
-		rename(from,to);
+		int errnum = rename(from, to);
+		if (errnum) {
+			error("SaveGameIterator", "Rename error %d when pruning quicksaves!\n", errnum);
+		}
 	}
 }
 
@@ -511,15 +526,28 @@ static int CanSave()
 			return 6;
 		}
 
-                if (map->AnyEnemyNearPoint(actor->Pos)) {
-                        displaymsg->DisplayConstantString( STR_CANTSAVEMONS, DMC_BG2XPGREEN );
-                        return 7;
-                }
+		if (map->AnyEnemyNearPoint(actor->Pos)) {
+			displaymsg->DisplayConstantString( STR_CANTSAVEMONS, DMC_BG2XPGREEN );
+			return 7;
+		}
 
 	}
 
+	Point pc1 =  game->GetPC(0, true)->Pos;
+	Actor **nearActors = map->GetAllActorsInRadius(pc1, GA_NO_DEAD|GA_NO_UNSCHEDULED, 15*4);
+	i = 0;
+	while (nearActors[i]) {
+		Actor *actor = nearActors[i];
+		if (actor->GetInternalFlag() & IF_NOINT) {
+			// dialog about to start or similar
+			displaymsg->DisplayConstantString(STR_CANTSAVEDIALOG2, DMC_BG2XPGREEN);
+			return 8;
+		}
+		i++;
+	}
+	free(nearActors);
+
 	//TODO: can't save while AOE spells are in effect -> CANTSAVE
-	//TODO: can't save while IF_NOINT is set on any actor -> CANTSAVEDIALOG2 (dialog about to start)
 	//TODO: can't save  during a rest, chapter information or movie -> CANTSAVEMOVIE
 
 	return 0;

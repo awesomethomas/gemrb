@@ -67,10 +67,13 @@ def OpenHLAWindow (actor, numclasses, classes, levels):
 
 	# create the done button
 	HLADoneButton = HLAWindow.GetControl (28)
-	HLADoneButton.SetState(IE_GUI_BUTTON_DISABLED)
 	HLADoneButton.SetEvent(IE_GUI_BUTTON_ON_PRESS, HLADonePress)
 	HLADoneButton.SetText(11973)
 	HLADoneButton.SetFlags(IE_GUI_BUTTON_DEFAULT, OP_OR)
+	if HLACount:
+		HLADoneButton.SetState(IE_GUI_BUTTON_DISABLED)
+	else:
+		HLADoneButton.SetState(IE_GUI_BUTTON_ENABLED)
 
 	# setup our text area
 	HLATextArea = HLAWindow.GetControl(26)
@@ -124,12 +127,8 @@ def HLADonePress ():
 		if HLARef[:2] == "AP":
 			GemRB.ApplySpell(pc, HLARef[3:])
 		elif HLARef[:2] == "GA":
-			# make sure it isn't already learned
-			SpellIndex = Spellbook.HasSpell (pc, HLAType, HLALevel, HLARef[3:])
-			if SpellIndex < 0: # gotta learn it
-				GemRB.LearnSpell (pc, HLARef[3:], LS_MEMO)
-			else: # memorize it again
-				GemRB.MemorizeSpell (pc, HLAType, HLALevel, SpellIndex)
+			# learn it or memorize another one
+			Spellbook.LearnSpell (pc, HLARef[3:], HLAType, HLALevel, 1, LS_MEMO)
 
 		#save the number of this HLA memorized
 		#TODO: check param2 (0 seems to work ok)
@@ -327,7 +326,7 @@ def GetHLAs ():
 
 		# save all our HLAs from this class
 		for j in range (HLAClassTable.GetRowCount ()):
-			HLARef = HLAClassTable.GetValue (j, 0, 0)
+			HLARef = HLAClassTable.GetValue (j, 0, GTV_STR)
 			print "\tHLA",j,":",HLARef
 
 			# make sure we have an ability here
@@ -340,8 +339,8 @@ def GetHLAs ():
 				HLARef,\
 				0,\
 				GemRB.CountEffects (pc, "HLA", -1, -1, HLARef[3:]),\
-				HLAClassTable.GetValue (j, 6, 0),\
-				HLAClassTable.GetValue (j, 7, 0)]
+				HLAClassTable.GetValue (j, 6, GTV_STR),\
+				HLAClassTable.GetValue (j, 7, GTV_STR)]
 
 			# make sure we fall within the min and max paramaters
 			if HLAClassTable.GetValue (j, 3) > CurrentLevel or HLAClassTable.GetValue (j, 4) < CurrentLevel:
@@ -350,7 +349,7 @@ def GetHLAs ():
 				continue
 		
 			# see if we're alignment restricted (we never get them)
-			HLAAlign = HLAClassTable.GetValue (j, 8, 0)
+			HLAAlign = HLAClassTable.GetValue (j, 8, GTV_STR)
 			if HLAAlign == "ALL_EVIL" and GemRB.GetPlayerStat (pc, IE_ALIGNMENT) < 6:
 				# don't even save this one because we can never get it
 				print "\t\tNeeds ALL_EVIL"

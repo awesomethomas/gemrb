@@ -506,7 +506,7 @@ void Spellbook::RemoveSpell(const ieResRef ResRef)
 
 void Spellbook::SetBookType(int bt)
 {
-	sorcerer = bt;
+	sorcerer |= bt;
 }
 
 //returns the page group of the spellbook this spelltype belongs to
@@ -517,23 +517,27 @@ void Spellbook::SetBookType(int bt)
 //in the right group
 //the rest are stored as innate
 
-int Spellbook::LearnSpell(Spell *spell, int memo, unsigned int clsmsk, unsigned int kit)
+int Spellbook::LearnSpell(Spell *spell, int memo, unsigned int clsmsk, unsigned int kit, int level)
 {
 	CREKnownSpell *spl = new CREKnownSpell();
 	CopyResRef(spl->SpellResRef, spell->Name);
 	spl->Level = 0;
 	if (IWD2Style) {
 		PluginHolder<ActorMgr> gm(IE_CRE_CLASS_ID);
+		// is there an override (domain spells)?
+		if (level == -1) {
+			level = spell->SpellLevel-1;
+		}
+		spl->Level = level;
 		spl->Type = gm->FindSpellType(spell->Name, spl->Level, clsmsk, kit);
-		return spell->SpellLevel;
-	}
-
-	//not IWD2
-	if (spell->SpellType<6) {
-		spl->Type = spelltypes[spell->SpellType];
-		spl->Level = spell->SpellLevel-1;
 	} else {
-		spl->Type = IE_SPELL_TYPE_INNATE;
+		//not IWD2
+		if (spell->SpellType<6) {
+			spl->Type = spelltypes[spell->SpellType];
+			spl->Level = spell->SpellLevel-1;
+		} else {
+			spl->Type = IE_SPELL_TYPE_INNATE;
+		}
 	}
 
 	bool ret=AddKnownSpell(spl, memo);
@@ -564,7 +568,7 @@ bool Spellbook::AddKnownSpell(CREKnownSpell *spl, int flg)
 	}
 
 	spells[type][level]->known_spells.push_back(spl);
-	if (type==IE_SPELL_TYPE_INNATE) {
+	if (1<<type == innate || type == IE_IWD2_SPELL_SHAPE) {
 		spells[type][level]->SlotCount++;
 		spells[type][level]->SlotCountWithBonus++;
 	}
@@ -746,9 +750,11 @@ void Spellbook::SetMemorizableSpellsCount(int Value, int type, unsigned int leve
 	CRESpellMemorization* sm = GetSpellMemorization(type, level);
 	if (bonus) {
 		if (!Value) {
-			Value=sm->SlotCount;
+			Value=sm->SlotCountWithBonus;
 		}
-		sm->SlotCountWithBonus=(ieWord) (sm->SlotCountWithBonus+Value);
+                //if can't cast w/o bonus then can't cast at all!
+                if (sm->SlotCount)
+                    sm->SlotCountWithBonus=(ieWord) (sm->SlotCountWithBonus+Value);
 	}
 	else {
 		diff=sm->SlotCountWithBonus-sm->SlotCount;

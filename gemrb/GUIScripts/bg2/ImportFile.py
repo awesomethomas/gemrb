@@ -33,8 +33,7 @@ def OnLoad():
 	TextAreaControl.SetText(10963)
 
 	TextAreaControl = ImportWindow.GetControl(2)
-	TextAreaControl.SetFlags (IE_GUI_TEXTAREA_SELECTABLE)
-	TextAreaControl.GetCharacters()
+	TextAreaControl.ListResources(CHR_EXPORTS)
  
 	DoneButton = ImportWindow.GetControl(0)
 	DoneButton.SetText(2610)
@@ -47,7 +46,7 @@ def OnLoad():
 
 	DoneButton.SetEvent(IE_GUI_BUTTON_ON_PRESS, DonePress)
 	CancelButton.SetEvent(IE_GUI_BUTTON_ON_PRESS, CancelPress)
-	TextAreaControl.SetEvent(IE_GUI_TEXTAREA_ON_CHANGE, SelectPress)
+	TextAreaControl.SetEvent(IE_GUI_TEXTAREA_ON_SELECT, SelectPress)
 	ImportWindow.SetVisible(WINDOW_VISIBLE)
 	return
 

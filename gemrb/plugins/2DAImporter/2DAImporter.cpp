@@ -54,7 +54,7 @@ bool p2DAImporter::Open(DataStream* str)
 	while (*strp == ' ')
 		strp++;
 	if (strncmp( strp, "2DA V1.0", 8 ) != 0) {
-		Log(WARNING, "2DAImporter", "Bad signature (%s)! Ignoring...", str->filename );
+		Log(WARNING, "2DAImporter", "Bad signature (%s)! Complaining, but not ignoring...", str->filename );
 		// we don't care about this, so exptable.2da of iwd2 won't cause a bigger problem
 		// also, certain creatures are described by 2da's without signature.
 		// return false;
@@ -63,9 +63,9 @@ bool p2DAImporter::Open(DataStream* str)
 	str->ReadLine( Signature, sizeof(Signature) );
 	char* token = strtok( Signature, " " );
 	if (token) {
-		strncpy(defVal, token, sizeof(defVal) );
+		strlcpy(defVal, token, sizeof(defVal));
 	} else { // no whitespace
-		strncpy(defVal, Signature, sizeof(defVal) );
+		strlcpy(defVal, Signature, sizeof(defVal));
 	}
 	bool colHead = true;
 	int row = 0;

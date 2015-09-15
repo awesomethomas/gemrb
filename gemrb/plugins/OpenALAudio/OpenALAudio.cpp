@@ -150,10 +150,12 @@ OpenALAudioDriver::OpenALAudioDriver(void)
 	alutContext = NULL;
 	MusicPlaying = false;
 	music_memory = (short*) malloc(ACM_BUFFERSIZE);
-	MusicSource = 0;
+	MusicSource = num_streams = 0;
 	memset(MusicBuffer, 0, MUSICBUFFERS*sizeof(ALuint));
 	musicMutex = SDL_CreateMutex();
 	ambim = NULL;
+	musicThread = NULL;
+	stayAlive = false;
 }
 
 void OpenALAudioDriver::PrintDeviceList ()
@@ -934,7 +936,7 @@ void OpenALAudioDriver::QueueBuffer(int stream, unsigned short bits,
 
 int OpenALAudioDriver::QueueALBuffer(ALuint source, ALuint buffer)
 {
-#ifdef _DEBUG
+#ifdef DEBUG_AUDIO
 	ALint frequency, bits, channels;
 	alGetBufferi(buffer, AL_FREQUENCY, &frequency);
 	alGetBufferi(buffer, AL_BITS, &bits);
@@ -963,8 +965,9 @@ int OpenALAudioDriver::QueueALBuffer(ALuint source, ALuint buffer)
 	// queueing always implies playing for us
 	if (state != AL_PLAYING ) {
 		alSourcePlay(source);
-		checkALError("Unable to play source", ERROR);
-		return GEM_ERROR;
+		if (checkALError("Unable to play source", ERROR)) {
+			return GEM_ERROR;
+		}
 	}
 	return GEM_OK;
 }

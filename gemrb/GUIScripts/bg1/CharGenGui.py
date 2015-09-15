@@ -1,7 +1,6 @@
 import GemRB
 from GUIDefines import *
 from ie_stats import *
-from ie_restype import RES_2DA
 import CharGenCommon
 import GUICommon
 import Spellbook
@@ -53,7 +52,8 @@ def getRace(area):
 	RaceID = GemRB.GetPlayerStat (MyChar, IE_RACE)
 	RaceIndex = CommonTables.Races.FindValue(3,RaceID)
 	RaceCap = CommonTables.Races.GetValue(RaceIndex,2)
-	area.Append(1048,-1) # new line
+	area.Append("\n")
+	area.Append(1048)
 	area.Append(": ")
 	area.Append(RaceCap)
 
@@ -68,7 +68,8 @@ def getClass(area):
 	MyChar = GemRB.GetVar ("Slot")
 	ClassTitle = GUICommon.GetActorClassTitle(MyChar)
 
-	area.Append(12136, -1)
+	area.Append("\n")
+	area.Append(12136)
 	area.Append(": ")
 	area.Append(ClassTitle)
 	
@@ -88,7 +89,8 @@ def getAlignment(area):
 	MyChar = GemRB.GetVar ("Slot")
 	AllignID = GemRB.GetPlayerStat (MyChar, IE_ALIGNMENT)
 	
-	area.Append(1049, -1)
+	area.Append("\n")
+	area.Append(1049)
 	area.Append(": ")
 	AllignIndex = CommonTables.Aligns.FindValue (3, AllignID)
 	AllignCap = CommonTables.Aligns.GetValue (AllignIndex, 2)
@@ -111,12 +113,12 @@ def getAbilities(area):
 	MyChar = GemRB.GetVar ("Slot")
 	AbilityTable = GemRB.LoadTable ("ability")
 	AbilityCount = AbilityTable.GetRowCount ()
+	area.Append("\n")
 	for i in range(AbilityCount):
 		v = AbilityTable.GetValue(i,2)
 		id = AbilityTable.GetValue(i,3)
-		area.Append(v, -1)
-		area.Append(": "+str(GemRB.GetPlayerStat(MyChar,id)))
-	area.Append("\n")
+		area.Append(v)
+		area.Append(": " + str(GemRB.GetPlayerStat(MyChar,id)) + "\n")
 	area.Append("\n")
 
 #Skill
@@ -136,7 +138,7 @@ def getHatedRace(TextAreaControl):
 	if Race:
 		HateRaceTable = GemRB.LoadTable ("HATERACE")
 		Row = HateRaceTable.FindValue (1, Race)
-		info = GemRB.GetString (HateRaceTable.GetValue(Row, 0))
+		info = HateRaceTable.GetValue (Row, 0, GTV_REF)
 		if info != "":
 			#TextAreaControl.Append("\n")
 			info = ": " + info + "\n"
@@ -165,7 +167,7 @@ def getMageSpells(TextAreaControl):
 			Spell = GemRB.GetSpell (Spell['SpellResRef'], 1)['SpellName']
 			info += GemRB.GetString (Spell) + "\n"
 	if info != "":
-		info = "\n" + info + "\n"
+		info = "\n" + info + ""
 		TextAreaControl.Append (11027)
 		TextAreaControl.Append (info)
 
@@ -210,7 +212,7 @@ def getSkills(TextAreaControl):
 		
 	if SkillTable.GetValue ("RATE", KitName) != -1 or BardSkills != "*" or RangerSkills != "*":
 		for skill in range(SkillTable.GetRowCount () - 2):
-			name = GemRB.GetString (SkillTable.GetValue (skill+2, 1))
+			name = SkillTable.GetValue (skill+2, 1, GTV_REF)
 			id = SkillTable.GetValue (skill+2, 2)
 			available = SkillTable.GetValue (SkillTable.GetRowName (skill+2), KitName)
 			value = GemRB.GetPlayerStat(MyChar,id)
@@ -218,8 +220,7 @@ def getSkills(TextAreaControl):
 				info += name + ": " + str(value) + "\n"
 				
 	if info != "":
-		info = "\n" + info + "\n"
-		TextAreaControl.Append("\n")
+		info = "\n" + info + ""
 		TextAreaControl.Append (8442)
 		TextAreaControl.Append (info)
 	
@@ -240,7 +241,7 @@ def getProfi(TextAreaControl):
 	for i in range(ProfCount):
 		# 4294967296 overflows to -1 on some arches, so we use a smaller invalid strref
 		id = TmpTable.GetValue (i, 0)+IE_PROFICIENCYBASTARDSWORD
-		Weapon = GemRB.GetString (TmpTable.GetValue (i, 1))
+		Weapon = TmpTable.GetValue (i, 1, GTV_REF)
 		Value = GemRB.GetPlayerStat (MyChar,id)
 		if Value:
 			pluses = " "
@@ -317,7 +318,7 @@ def getDivineSpells(TextAreaControl):
 			Spell = GemRB.GetSpell (Spell['SpellResRef'], 1)['SpellName']
 			info += GemRB.GetString (Spell) + "\n"
 	if info != "":
-		info = "\n" + info + "\n"
+		info = "\n" + info + ""
 		TextAreaControl.Append (11028)
 		TextAreaControl.Append (info)
 		
@@ -364,6 +365,7 @@ def setAccept():
 	LargePortrait = GemRB.GetToken ("LargePortrait")
 	SmallPortrait = GemRB.GetToken ("SmallPortrait")
 	GemRB.FillPlayerInfo (MyChar, LargePortrait, SmallPortrait)
+	GemRB.SetPlayerString (MyChar, 74, 11863)
 	#10 is a weapon slot (see slottype.2da row 10)
 	GemRB.CreateItem (MyChar, "staf01", 10, 1, 0, 0)
 	GemRB.SetEquippedQuickSlot (MyChar, 0)

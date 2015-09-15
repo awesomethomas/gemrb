@@ -121,8 +121,9 @@ def SelectedNewPlayer ():
 	ActiveSpellBooks=[]
 	
 	for i in range(8):
-		if GemRB.GetKnownSpellsCount(pc, i)>0:
+		if GemRB.GetMemorizableSpellsCount (pc, i, 0) > 0:
 			ActiveSpellBooks+=[i]
+
 	BookCount = len(ActiveSpellBooks)
 	BookTopIndex = 0
 	if len (ActiveSpellBooks):
@@ -193,14 +194,14 @@ def UpdateSpellBookWindow ():
 		Button.SetFlags (IE_GUI_BUTTON_NO_IMAGE, OP_OR)
 		Label = Window.GetControl (0x1000003f+i)
 		# actually, it doesn't display any memorized spells for sorcerer-style spellbooks
-		if i < mem_cnt and not sorcerer_style:
+		if i < len(MemorizedSpellList) and not sorcerer_style:
 			ms = MemorizedSpellList[i]
 			spell = ms['SpellResRef']
 			Button.SetSpellIcon (spell)
 			Button.SetFlags (IE_GUI_BUTTON_PICTURE | IE_GUI_BUTTON_PLAYONCE, OP_OR)
 			Button.SetTooltip (ms['SpellName'])
 			Button.SetVarAssoc ("SpellButton", i)
-			# since spells are stacked, we need to check first whether to unmemorize (deplete) or remove (already depeleted)
+			# since spells are stacked, we need to check first whether to unmemorize (deplete) or remove (already depleted)
 			if ms['MemoCount'] < ms['KnownCount']:
 				# already depleted, just remove
 				Button.SetEvent (IE_GUI_BUTTON_ON_PRESS, lambda: OnSpellBookUnmemorizeSpell(ms['MemoCount']))
@@ -244,7 +245,10 @@ def UpdateSpellBookWindow ():
 	# and they display just the current and total number of memorizations per level
 	Label = Window.GetControl (0x10000004)
 	if sorcerer_style:
-		Label.SetText (str(true_mem_cnt)+"/"+str(max_mem_cnt))
+		available = "0"
+		if known_cnt:
+			available = str(true_mem_cnt / known_cnt)
+		Label.SetText (available+"/"+str(max_mem_cnt))
 	else:
 		# reset mem_cnt to take into account stacks
 		mem_cnt = GetMemorizedSpellsCount (True)

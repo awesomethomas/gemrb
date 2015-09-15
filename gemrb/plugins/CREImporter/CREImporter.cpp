@@ -21,6 +21,7 @@
 #include "CREImporter.h"
 
 #include "ie_stats.h"
+#include "voodooconst.h"
 #include "win32def.h"
 
 #include "EffectMgr.h"
@@ -115,7 +116,7 @@ int SpellEntry::FindSpell(unsigned int kit) const
 			return levels[i].level;
 		}
 	}
-	return 0;
+	return -1;
 }
 
 static int FindSpell(ieResRef spellref, SpellEntry* list, int listsize)
@@ -197,16 +198,18 @@ static int magcount=-1;
 
 static int IsDomain(ieResRef name, unsigned short &level, unsigned int kit)
 {
-	for(int i=0;i<domcount;i++) {
+	for(int i=0;i<splcount;i++) {
 		if (domlist[i].Equals(name) ) {
-			level = domlist[i].FindSpell(kit);
-				return i;
+			int lev = domlist[i].FindSpell(kit);
+			if (lev == -1) return -1;
+			level = lev;
+			return i;
 		}
 	}
 	return -1;
 }
 
-static int IsSpecial(ieResRef name, unsigned short &level, unsigned int kit)
+/*static int IsSpecial(ieResRef name, unsigned short &level, unsigned int kit)
 {
 	for(int i=0;i<magcount;i++) {
 		if (maglist[i].Equals(name) ) {
@@ -215,20 +218,18 @@ static int IsSpecial(ieResRef name, unsigned short &level, unsigned int kit)
 		}
 	}
 	return -1;
-}
+}*/
 
-static int SpellType(ieResRef name, unsigned short &level, unsigned int clsmsk)
+// just returns the integer part of the log
+// perfect for deducing kit values, since they are bitfields and we don't care about any noise
+static int log2(int value)
 {
-	for (int i = 0;i<splcount;i++) {
-		if (spllist[i].Equals(name) ) {
-			for(int type=0;type<7;type++) {
-				if (clsmsk & i) {
-					level = spllist[i].FindSpell(type);
-				}
-			}
-		}
+	int pow = -1;
+	while (value) {
+		value = value>>1;
+		pow++;
 	}
-	return 0;
+	return pow;
 }
 
 int CREImporter::FindSpellType(char *name, unsigned short &level, unsigned int clsmsk, unsigned int kit) const
@@ -237,9 +238,40 @@ int CREImporter::FindSpellType(char *name, unsigned short &level, unsigned int c
 	if (IsSong(name)>=0) return IE_IWD2_SPELL_SONG;
 	if (IsShape(name)>=0) return IE_IWD2_SPELL_SHAPE;
 	if (IsInnate(name)>=0) return IE_IWD2_SPELL_INNATE;
-	if (IsDomain(name, level, kit)>=0) return IE_IWD2_SPELL_DOMAIN;
-	if (IsSpecial(name, level, kit)>=0) return IE_IWD2_SPELL_WIZARD;
-	return SpellType(name, level, clsmsk);
+// there is no gui page for specialists spells, so let's skip them here
+// otherwise their overlap causes bards and sorcerers to have their spells
+// on the wizard page
+//	if (IsSpecial(name, level, kit)>=0) return IE_IWD2_SPELL_WIZARD;
+
+	// strict domain spell check, so we don't steal the spells from other books
+	// still needs to happen first or the laxer check below can misclassify
+	// first translate the actual kit to a column index to make them comparable
+	// luckily they are in order
+	int kit2 = log2(kit/0x8000); // 0x8000 is the first cleric kit
+	if (IsDomain(name, level, kit2) >= 0) return IE_IWD2_SPELL_DOMAIN;
+
+	// try harder for the rest
+	for (int i = 0;i<splcount;i++) {
+		if (spllist[i].Equals(name) ) {
+			// iterate over table columns ("kits" - book types)
+			for(int type = IE_IWD2_SPELL_BARD; type < IE_IWD2_SPELL_DOMAIN; type++) {
+				if (clsmsk & (1<<type)) {
+					int level2 = spllist[i].FindSpell(type);
+					if (level2 == -1) {
+						Log(ERROR, "CREImporter", "Spell (%s of type %d) found without a level set! Using 1!", name, type);
+						level2 = 0; // internal 0-indexed level
+					}
+					level = level2;
+					// FIXME: returning the first will misplace spells for multiclasses
+					return type;
+				}
+			}
+		}
+	}
+
+	Log(ERROR, "CREImporter", "Could not find spell (%s) booktype! %d, %d!", name, clsmsk, kit);
+	// pseudorandom fallback
+	return IE_IWD2_SPELL_WIZARD;
 }
 
 //int CREImporter::ResolveSpellName(ieResRef name, int level, ieIWD2SpellType type) const
@@ -280,18 +312,6 @@ static int ResolveSpellName(ieResRef name, int level, ieIWD2SpellType type)
 		}
 	}
 	return -1;
-}
-
-// just returns the integer part of the log
-// perfect for deducing kit values, since they are bitfields and we don't care about any noise
-static int log2(int value)
-{
-	int pow = -1;
-	while (value) {
-		value = value>>1;
-		pow++;
-	}
-	return pow;
 }
 
 //input: index, level, type, kit
@@ -361,7 +381,7 @@ static const ieResRef *ResolveSpellIndex(int index, int level, ieIWD2SpellType t
 		Log(ERROR, "CREImporter", "Spell (%d of type %d) found at unexpected level (%d)!", index, type, level);
 		int level2 = spllist[index].FindSpell(type);
 		// grrr, some rows have no levels set - they're all 0, but with a valid resref, so just return that
-		if (!level2) {
+		if (level2 == -1) {
 			Log(DEBUG, "CREImporter", "Spell entry (%d) without any levels set!", index);
 			return spllist[index].GetSpell();
 		}
@@ -457,8 +477,8 @@ static SpellEntry *GetKitSpell(const ieResRef tableresref, int &count)
 	if (!tab)
 		return 0;
 
-	int column = tab->GetColumnCount()-1;
-	if (column<1) {
+	int lastCol = tab->GetColumnCount() - 1; // the last column is not numeric, so we'll skip it
+	if (lastCol < 1) {
 		return 0;
 	}
 
@@ -478,7 +498,7 @@ static SpellEntry *GetKitSpell(const ieResRef tableresref, int &count)
 		} else {
 			// find the correct index in listspll.2da
 			ieResRef spellref;
-			strnlwrcpy(spellref, tab->QueryField(i, column), 8);
+			strnlwrcpy(spellref, tab->QueryField(i, lastCol), 8);
 			// the table has disabled spells in it and they all have the first two chars replaced by '*'
 			if (spellref[0] == '*') {
 				continue;
@@ -486,8 +506,8 @@ static SpellEntry *GetKitSpell(const ieResRef tableresref, int &count)
 			index = FindSpell(spellref, spllist, splcount);
 			assert (index != -1);
 		}
-		reslist[index].SetSpell(tab->QueryField(i, column));
-		for(int col=0;col<column;col++) {
+		reslist[index].SetSpell(tab->QueryField(i, lastCol));
+		for(int col=0; col < lastCol; col++) {
 			reslist[index].AddLevel(atoi(tab->QueryField(i, col)), col);
 		}
 	}
@@ -640,7 +660,7 @@ void CREImporter::WriteChrHeader(DataStream *stream, Actor *act)
 	stream->Write( Signature, 8);
 	memset( Signature,0,sizeof(Signature));
 	memset( name,0,sizeof(name));
-	strncpy( name, act->GetName(0), sizeof(name) );
+	strlcpy(name, act->GetName(0), sizeof(name));
 	stream->Write( name, 32);
 
 	stream->WriteDword( &tmpDword); //cre offset (chr header size)
@@ -772,18 +792,20 @@ void CREImporter::ReadChrHeader(Actor *act)
 	switch (CREVersion) {
 	case IE_CRE_V2_2:
 		//gemrb format doesn't save these redundantly
+		ieResRef spell;
 		for (i=0;i<QSPCount;i++) {
-			str->ReadResRef(Signature);
-			if (Signature[0]) {
+			str->ReadResRef(spell);
+			// FIXME: why is this needed or why do we overwrite it immediately after?
+			if (spell[0]) {
 				act->PCStats->QuickSpellClass[i]=0xff;
-				memcpy(act->PCStats->QuickSpells[i], Signature, sizeof(ieResRef));
+				memcpy(act->PCStats->QuickSpells[i], spell, sizeof(ieResRef));
 			}
 		}
 		for (i=0;i<QSPCount;i++) {
-			str->ReadResRef(Signature);
-			if (Signature[0]) {
+			str->ReadResRef(spell);
+			if (spell[0]) {
 				act->PCStats->QuickSpellClass[i]=0xfe;
-				memcpy(act->PCStats->QuickSpells[i], Signature, sizeof(ieResRef));
+				memcpy(act->PCStats->QuickSpells[i], spell, sizeof(ieResRef));
 			}
 		}
 		//fallthrough
@@ -931,15 +953,15 @@ Actor* CREImporter::GetActor(unsigned char is_in_party)
 	act->InParty = is_in_party;
 	str->ReadDword( &act->LongStrRef );
 	//Beetle name in IWD needs the allow zero flag
-	char* poi = core->GetString( act->LongStrRef, IE_STR_ALLOW_ZERO );
+	char* poi = core->GetCString( act->LongStrRef, IE_STR_ALLOW_ZERO );
 	act->SetName( poi, 1 ); //setting longname
 	free( poi );
 	str->ReadDword( &act->ShortStrRef );
-	poi = core->GetString( act->ShortStrRef );
+	poi = core->GetCString( act->ShortStrRef );
 	act->SetName( poi, 2 ); //setting shortname (for tooltips)
 	free( poi );
-	act->BaseStats[IE_VISUALRANGE] = 30; //this is just a hack
-	act->BaseStats[IE_DIALOGRANGE] = 15; //this is just a hack
+	act->BaseStats[IE_VISUALRANGE] = VOODOO_VISUAL_RANGE; // not stored anywhere
+	act->BaseStats[IE_DIALOGRANGE] = VOODOO_DIALOG_RANGE;
 	str->ReadDword( &act->BaseStats[IE_MC_FLAGS] );
 	str->ReadDword( &act->BaseStats[IE_XPVALUE] );
 	str->ReadDword( &act->BaseStats[IE_XP] );
@@ -1909,6 +1931,7 @@ void CREImporter::GetActorIWD2(Actor *act)
 	act->BaseStats[IE_TRANSLUCENT]=tmpByte;
 	str->Read( &tmpByte, 1); //fade speed
 	str->Read( &tmpByte, 1); //spec. flags
+	act->BaseStats[IE_SPECFLAGS] = tmpByte;
 	str->Read( &tmpByte, 1); //invisible
 	str->ReadWord( &tmpWord); //unknown
 	str->Read( &tmpByte, 1); //unused skill points
@@ -2877,7 +2900,10 @@ int CREImporter::PutActorIWD2(DataStream *stream, Actor *actor)
 	stream->Write( filling, 15);
 	tmpByte = actor->BaseStats[IE_TRANSLUCENT];
 	stream->Write(&tmpByte, 1);
-	stream->Write( filling, 5); //fade speed, spec flags, invisible
+	stream->Write(filling, 1); //fade speed
+	tmpByte = actor->BaseStats[IE_SPECFLAGS];
+	stream->Write(&tmpByte, 1);
+	stream->Write(filling, 3); //invisible, 2 unknowns
 	tmpByte = actor->BaseStats[IE_UNUSED_SKILLPTS];
 	stream->Write( &tmpByte, 1);
 	stream->Write( filling, 124);
@@ -2915,6 +2941,7 @@ int CREImporter::PutKnownSpells( DataStream *stream, Actor *actor)
 			unsigned int count = actor->spellbook.GetKnownSpellsCount(i, j);
 			for (unsigned int k=0;k<count;k++) {
 				CREKnownSpell *ck = actor->spellbook.GetKnownSpell(i, j, k);
+				assert(ck);
 				stream->WriteResRef(ck->SpellResRef);
 				stream->WriteWord( &ck->Level);
 				stream->WriteWord( &ck->Type);
@@ -2960,7 +2987,7 @@ int CREImporter::PutMemorizedSpells(DataStream *stream, Actor *actor)
 			unsigned int count = actor->spellbook.GetMemorizedSpellsCount(i,j, false);
 			for (unsigned int k=0;k<count;k++) {
 				CREMemorizedSpell *cm = actor->spellbook.GetMemorizedSpell(i,j,k);
-
+				assert(cm);
 				stream->WriteResRef( cm->SpellResRef);
 				stream->WriteDword( &cm->Flags);
 			}

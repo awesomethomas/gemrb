@@ -23,6 +23,7 @@
 #include "GameScript/GSUtils.h"
 #include "GameScript/Matching.h"
 
+#include "voodooconst.h"
 #include "win32def.h"
 
 #include "AmbientMgr.h"
@@ -817,10 +818,10 @@ void GameScript::StartCutScene(Scriptable* Sender, Action* parameters)
 	delete( gs );
 }
 
-void GameScript::CutSceneID(Scriptable* /*Sender*/, Action* /*parameters*/)
+void GameScript::CutSceneID(Scriptable *Sender, Action* /*parameters*/)
 {
 	// shouldn't get called
-	Log(WARNING, "GameScript", "CutSceneID was called!");
+	Log(DEBUG, "GameScript", "CutSceneID was called by %s!", Sender->GetScriptName());
 }
 
 static EffectRef fx_charm_ref = { "State:Charmed", -1 };
@@ -1128,6 +1129,7 @@ void GameScript::RunToPointNoRecticle(Scriptable* Sender, Action* parameters)
 	}
 	Actor* actor = ( Actor* ) Sender;
 	if (!actor->InMove() || actor->Destination != parameters->pointParameter) {
+		actor->SetOrientation(GetOrient(parameters->pointParameter, actor->Pos), false);
 		actor->WalkTo( parameters->pointParameter, IF_NORETICLE|IF_RUNNING, 0 );
 	}
 	if (!actor->InMove()) {
@@ -1144,6 +1146,7 @@ void GameScript::RunToPoint(Scriptable* Sender, Action* parameters)
 	}
 	Actor* actor = ( Actor* ) Sender;
 	if (!actor->InMove() || actor->Destination != parameters->pointParameter) {
+		actor->SetOrientation(GetOrient(parameters->pointParameter, actor->Pos), false);
 		actor->WalkTo( parameters->pointParameter, IF_RUNNING, 0 );
 	}
 	if (!actor->InMove()) {
@@ -1166,7 +1169,7 @@ void GameScript::TimedMoveToPoint(Scriptable* Sender, Action* parameters)
 	Actor *actor = (Actor *) Sender;
 
 	if (!actor->InMove() || actor->Destination != parameters->pointParameter) {
-		actor->WalkTo( parameters->pointParameter, parameters->int1Parameter,0 );
+		actor->WalkTo(parameters->pointParameter, 0, parameters->int1Parameter);
 	}
 
 	//hopefully this hack will prevent lockups
@@ -1438,6 +1441,7 @@ void GameScript::MoveToCenterOfScreen(Scriptable* Sender, Action* /*parameters*/
 	}
 	if (!actor->InMove()) {
 		// we should probably instead keep retrying until we reach dest
+		actor->Interrupt();
 		Sender->ReleaseCurrentAction();
 	}
 }
@@ -1543,7 +1547,6 @@ void GameScript::RunAwayFromNoInterrupt(Scriptable* Sender, Action* parameters)
 		Sender->ReleaseCurrentAction();
 		return;
 	}
-	//actor->InternalFlags|=IF_NOINT;
 	actor->NoInterrupt();
 	//TODO: actor could use travel areas; once implemented, copy original to RunAwayFromNoInterruptNoLeaveArea and break the alias in GameScript.cpp
 	// we should be using int0Parameter for the timing here, not distance
@@ -1640,7 +1643,7 @@ void GameScript::KillFloatMessage(Scriptable* Sender, Action* parameters)
 	if (!target) {
 		target=Sender;
 	}
-	target->DisplayHeadText(NULL);
+	target->DisplayOverheadText(false);
 }
 
 void GameScript::DisplayStringHeadOwner(Scriptable* /*Sender*/, Action* parameters)
@@ -1802,7 +1805,7 @@ void GameScript::FaceSavedLocation(Scriptable* Sender, Action* parameters)
 }
 
 //pst and bg2 can play a song designated by index
-//actually pst has some extra params not currently implemented
+//actually pst has some extra params not currently implemented (never used - always the same)
 //switchplaylist implements fade by simply scheduling the next
 //music after the currently running one
 //FIXME: This code is similar to PlayAreaSong, consider refactoring
@@ -1954,20 +1957,20 @@ void GameScript::ScreenShake(Scriptable* Sender, Action* parameters)
 void GameScript::UnhideGUI(Scriptable* /*Sender*/, Action* /*parameters*/)
 {
 	Game* game = core->GetGame();
-	game->SetControlStatus(CS_HIDEGUI, BM_NAND);
+	game->SetControlStatus(CS_HIDEGUI, OP_NAND);
 }
 
 void GameScript::HideGUI(Scriptable* /*Sender*/, Action* /*parameters*/)
 {
 	Game* game = core->GetGame();
-	game->SetControlStatus(CS_HIDEGUI, BM_OR);
+	game->SetControlStatus(CS_HIDEGUI, OP_OR);
 }
 
 void GameScript::LockScroll(Scriptable* /*Sender*/, Action* /*parameters*/)
 {
 	GameControl* gc = core->GetGameControl();
 	if (gc) {
-		gc->SetScreenFlags(SF_LOCKSCROLL, BM_OR);
+		gc->SetScreenFlags(SF_LOCKSCROLL, OP_OR);
 	}
 }
 
@@ -1975,7 +1978,7 @@ void GameScript::UnlockScroll(Scriptable* /*Sender*/, Action* /*parameters*/)
 {
 	GameControl* gc = core->GetGameControl();
 	if (gc) {
-		gc->SetScreenFlags(SF_LOCKSCROLL, BM_NAND);
+		gc->SetScreenFlags(SF_LOCKSCROLL, OP_NAND);
 	}
 }
 
@@ -2650,10 +2653,6 @@ void GameScript::MoveBetweenAreas(Scriptable* Sender, Action* parameters)
 //FIXME The caster must meet the level requirements as set in the spell file
 void GameScript::Spell(Scriptable* Sender, Action* parameters)
 {
-	// handle the SpellWait iwd2 special case (other games don't use int0, so it is harmless)
-	if (parameters->int0Parameter == 0) {
-		parameters->int0Parameter = Sender->LastMarkedSpell;
-	}
 	SpellCore(Sender, parameters, SC_NO_DEAD|SC_RANGE_CHECK|SC_DEPLETE|SC_AURA_CHECK);
 }
 
@@ -3148,7 +3147,7 @@ void GameScript::LeaveAreaLUAPanicEntry(Scriptable* Sender, Action* parameters)
 void GameScript::SetToken(Scriptable* /*Sender*/, Action* parameters)
 {
 	//SetAt takes a newly created reference (no need of free/copy)
-	char * str = core->GetString( parameters->int0Parameter);
+	char * str = core->GetCString( parameters->int0Parameter);
 	core->GetTokenDictionary()->SetAt( parameters->string1Parameter, str);
 }
 
@@ -3491,20 +3490,15 @@ void GameScript::GlobalShRGlobal(Scriptable* Sender, Action* parameters)
 
 void GameScript::ClearAllActions(Scriptable* Sender, Action* /*parameters*/)
 {
-	Actor *except = NULL;
-	if (Sender->Type==ST_ACTOR) {
-		except = (Actor *) Sender;
-	}
 	Map *map = Sender->GetCurrentArea();
 	int i = map->GetActorCount(true);
 	while(i--) {
 		Actor* act = map->GetActor(i,true);
-		if (act && act!=except) {
-			if (!act->ValidTarget(GA_NO_DEAD) ) {
-				continue;
+		if (act && act != Sender && act->ValidTarget(GA_NO_DEAD)) {
+			if (!(act->GetInternalFlag() & IF_NOINT)) {
+				act->Stop();
+				act->SetModal(MS_NONE);
 			}
-			act->Stop();
-			act->SetModal(MS_NONE);
 		}
 	}
 }
@@ -3520,7 +3514,9 @@ void GameScript::ClearActions(Scriptable* Sender, Action* parameters)
 			return;
 		}
 	}
-	tar->Stop();
+	if (!(tar->GetInternalFlag() & IF_NOINT)) {
+		tar->Stop();
+	}
 }
 
 void GameScript::SetNumTimesTalkedTo(Scriptable* Sender, Action* parameters)
@@ -3579,9 +3575,9 @@ void GameScript::SetCriticalPathObject(Scriptable* Sender, Action* parameters)
 	}
 	Actor* actor = ( Actor* ) tar;
 	if (parameters->int0Parameter) {
-		actor->SetMCFlag(MC_PLOT_CRITICAL, BM_OR);
+		actor->SetMCFlag(MC_PLOT_CRITICAL, OP_OR);
 	} else {
-		actor->SetMCFlag(MC_PLOT_CRITICAL, BM_NAND);
+		actor->SetMCFlag(MC_PLOT_CRITICAL, OP_NAND);
 	}
 }
 
@@ -3592,7 +3588,7 @@ void GameScript::SetBeenInPartyFlags(Scriptable* Sender, Action* /*parameters*/)
 	}
 	Actor* actor = ( Actor* ) Sender;
 	//it is bit 15 of the multi-class flags (confirmed)
-	actor->SetMCFlag(MC_BEENINPARTY, BM_OR);
+	actor->SetMCFlag(MC_BEENINPARTY, OP_OR);
 }
 
 /*iwd2 sets the high MC bits this way*/
@@ -3603,9 +3599,9 @@ void GameScript::SetCreatureAreaFlag(Scriptable* Sender, Action* parameters)
 	}
 	Actor* actor = ( Actor* ) Sender;
 	if (parameters->int1Parameter) {
-		actor->SetMCFlag(parameters->int0Parameter, BM_OR);
+		actor->SetMCFlag(parameters->int0Parameter, OP_OR);
 	} else {
-		actor->SetMCFlag(parameters->int0Parameter, BM_NAND);
+		actor->SetMCFlag(parameters->int0Parameter, OP_NAND);
 	}
 }
 
@@ -3639,6 +3635,9 @@ void GameScript::SetVisualRange(Scriptable* Sender, Action* parameters)
 	}
 	Actor* actor = ( Actor* ) Sender;
 	actor->SetBase(IE_VISUALRANGE,parameters->int0Parameter);
+	if (actor->GetStat(IE_EA) < EA_EVILCUTOFF) {
+		actor->SetBase(IE_EXPLORE, 1);
+	}
 }
 
 void GameScript::MakeUnselectable(Scriptable* Sender, Action* parameters)
@@ -3903,7 +3902,7 @@ void GameScript::SetGabber(Scriptable* Sender, Action* parameters)
 	}
 	GameControl* gc = core->GetGameControl();
 	if (gc->GetDialogueFlags()&DF_IN_DIALOG) {
-		gc->dialoghandler->speakerID = tar->GetGlobalID();
+		gc->dialoghandler->SetSpeaker(tar);
 	} else {
 		Log(WARNING, "GameScript", "Can't set gabber!");
 	}
@@ -3941,7 +3940,7 @@ void GameScript::RemovePaladinHood(Scriptable* Sender, Action* /*parameters*/)
 	}
 	Actor *act = (Actor *) Sender;
 	act->ApplyKit(true);
-	act->SetMCFlag(MC_FALLEN_PALADIN, BM_OR);
+	act->SetMCFlag(MC_FALLEN_PALADIN, OP_OR);
 	if (act->InParty) displaymsg->DisplayConstantStringName(STR_PALADIN_FALL, DMC_BG2XPGREEN, act);
 }
 
@@ -3952,7 +3951,7 @@ void GameScript::RemoveRangerHood(Scriptable* Sender, Action* /*parameters*/)
 	}
 	Actor *act = (Actor *) Sender;
 	act->ApplyKit(true);
-	act->SetMCFlag(MC_FALLEN_RANGER, BM_OR);
+	act->SetMCFlag(MC_FALLEN_RANGER, OP_OR);
 	if (act->InParty) displaymsg->DisplayConstantStringName(STR_RANGER_FALL, DMC_BG2XPGREEN, act);
 }
 
@@ -3962,7 +3961,7 @@ void GameScript::RegainPaladinHood(Scriptable* Sender, Action* /*parameters*/)
 		return;
 	}
 	Actor *act = (Actor *) Sender;
-	act->SetMCFlag(MC_FALLEN_PALADIN, BM_NAND);
+	act->SetMCFlag(MC_FALLEN_PALADIN, OP_NAND);
 	act->ApplyKit(false);
 }
 
@@ -3972,7 +3971,7 @@ void GameScript::RegainRangerHood(Scriptable* Sender, Action* /*parameters*/)
 		return;
 	}
 	Actor *act = (Actor *) Sender;
-	act->SetMCFlag(MC_FALLEN_RANGER, BM_NAND);
+	act->SetMCFlag(MC_FALLEN_RANGER, OP_NAND);
 	act->ApplyKit(false);
 }
 
@@ -3982,6 +3981,9 @@ void GameScript::RegainRangerHood(Scriptable* Sender, Action* /*parameters*/)
 void GameScript::GetItem(Scriptable* Sender, Action* parameters)
 {
 	Scriptable* tar = GetActorFromObject( Sender, parameters->objects[1] );
+	if (!tar) {
+		return;
+	}
 	MoveItemCore(tar, Sender, parameters->string0Parameter,0,0);
 }
 
@@ -4164,7 +4166,10 @@ void GameScript::XEquipItem(Scriptable *Sender, Action* parameters)
 		if (slot != slot2) {
 			// swap them first, so we equip to the desired slot
 			CREItem *si = actor->inventory.RemoveItem(slot);
-			actor->inventory.AddSlotItem(si, slot2);
+			if (actor->inventory.AddSlotItem(si, slot2) != ASI_SUCCESS) {
+				// should never happen, since we just made room
+				error("Actions", "XEquip: suddenly no slots left!\n");
+			}
 		}
 		actor->inventory.EquipItem(slot2);
 	} else {
@@ -4588,15 +4593,22 @@ void GameScript::SetRestEncounterChance(Scriptable * Sender, Action* parameters)
 }
 
 //easily hardcoded end sequence
-void GameScript::EndCredits(Scriptable* /*Sender*/, Action* /*parameters*/)
+void GameScript::EndCredits(Scriptable* Sender, Action* parameters)
 {
-	core->PlayMovie("credits");
+	if (gamedata->Exists("25ecred", IE_2DA_CLASS_ID, true)) {
+		/* ToB */
+		ExecuteString(Sender, "TextScreen(\"25ecred\")");
+	} else {
+		core->PlayMovie("credits");
+		QuitGame(Sender, parameters);
+	}
 }
 
 //easily hardcoded end sequence
-void GameScript::ExpansionEndCredits(Scriptable* /*Sender*/, Action* /*parameters*/)
+void GameScript::ExpansionEndCredits(Scriptable *Sender, Action *parameters)
 {
 	core->PlayMovie("ecredit");
+	QuitGame(Sender, parameters);
 }
 
 //always quits game, but based on game it can play end animation, or display
@@ -4668,18 +4680,27 @@ void GameScript::ApplyDamagePercent(Scriptable* Sender, Action* parameters)
 void GameScript::Damage(Scriptable* Sender, Action* parameters)
 {
 	Actor *damagee;
-	Actor *damager;
+	Scriptable *damager = Sender;
 	Scriptable* tar = GetActorFromObject( Sender, parameters->objects[1] );
 	if (!tar || tar->Type!=ST_ACTOR) {
 		return;
 	}
+
+	int diceNum = (parameters->int1Parameter>>12)&15;
+	int diceSize = (parameters->int1Parameter>>4)&255;
+	int diceAdd = parameters->int1Parameter&15;
+	int damage = 0;
 	damagee = (Actor *) tar;
+	Actor *damager2 = NULL;
 	if (Sender->Type==ST_ACTOR) {
-		damager=(Actor *) Sender;
-	} else {
-		damager=damagee;
+		damager2 = (Actor *) Sender;
 	}
-	int damage = damager->LuckyRoll( (parameters->int1Parameter>>12)&15, (parameters->int1Parameter>>4)&255, parameters->int1Parameter&15, LR_DAMAGELUCK, damagee);
+
+	if (damager2 && damager2 != damagee) {
+		damage = damager2->LuckyRoll(diceNum, diceSize, diceAdd, LR_DAMAGELUCK, damagee);
+	} else {
+		damage = core->Roll(diceNum, diceSize, diceAdd);
+	}
 	int type=MOD_ADDITIVE;
 	switch(parameters->int0Parameter) {
 	case 2: //raise
@@ -4771,7 +4792,7 @@ void GameScript::RevealAreaOnMap(Scriptable* /*Sender*/, Action* parameters)
 		error("GameScript", "Can't find worldmap!\n");
 	}
 	// WMP_ENTRY_ADJACENT because otherwise revealed bg2 areas are unreachable from city gates
-	worldmap->SetAreaStatus(parameters->string0Parameter, WMP_ENTRY_VISIBLE|WMP_ENTRY_ADJACENT, BM_OR);
+	worldmap->SetAreaStatus(parameters->string0Parameter, WMP_ENTRY_VISIBLE|WMP_ENTRY_ADJACENT, OP_OR);
 	displaymsg->DisplayConstantString(STR_WORLDMAPCHANGE, DMC_BG2XPGREEN);
 }
 
@@ -4782,7 +4803,7 @@ void GameScript::HideAreaOnMap( Scriptable* /*Sender*/, Action* parameters)
 		error("GameScript", "Can't find worldmap!\n");
 	}
 	// WMP_ENTRY_ADJACENT because otherwise revealed bg2 areas are unreachable from city gates
-	worldmap->SetAreaStatus(parameters->string0Parameter, WMP_ENTRY_VISIBLE|WMP_ENTRY_ADJACENT, BM_NAND);
+	worldmap->SetAreaStatus(parameters->string0Parameter, WMP_ENTRY_VISIBLE|WMP_ENTRY_ADJACENT, OP_NAND);
 }
 
 void GameScript::SendTrigger(Scriptable* Sender, Action* parameters)
@@ -4800,13 +4821,14 @@ void GameScript::Shout( Scriptable* Sender, Action* parameters)
 		return;
 	}
 	//according to IESDP silenced creatures cannot use shout
+	// neither do dead ones or the paladin ogres turn Garren hostile
 	Actor *actor = (Actor *) Sender;
-	if (actor->GetStat( IE_STATE_ID) & STATE_SILENCED) {
+	if (actor->GetStat(IE_STATE_ID) & (STATE_SILENCED|STATE_DEAD)) {
 		return;
 	}
 	Map *map=Sender->GetCurrentArea();
 	//max. shouting distance, please adjust it if you know better
-	map->Shout(actor, parameters->int0Parameter, MAX_TRAVELING_DISTANCE);
+	map->Shout(actor, parameters->int0Parameter, VOODOO_SHOUT_RANGE);
 }
 
 void GameScript::GlobalShout( Scriptable* Sender, Action* parameters)
@@ -4816,7 +4838,7 @@ void GameScript::GlobalShout( Scriptable* Sender, Action* parameters)
 	}
 	//according to IESDP silenced creatures cannot use shout
 	Actor *actor = (Actor *) Sender;
-	if (actor->GetStat( IE_STATE_ID) & STATE_SILENCED) {
+	if (actor->GetStat(IE_STATE_ID) & (STATE_SILENCED|STATE_DEAD)) {
 		return;
 	}
 	Map *map=Sender->GetCurrentArea();
@@ -4829,8 +4851,9 @@ void GameScript::Help( Scriptable* Sender, Action* /*parameters*/)
 	if (Sender->Type!=ST_ACTOR) {
 		return;
 	}
+	//TODO: add state limiting like in Shout?
 	Map *map=Sender->GetCurrentArea();
-	map->Shout((Actor *) Sender, 0, 40);
+	map->Shout((Actor *) Sender, 0, VOODOO_SHOUT_RANGE);
 }
 
 void GameScript::GiveOrder(Scriptable* Sender, Action* parameters)
@@ -4844,8 +4867,7 @@ void GameScript::GiveOrder(Scriptable* Sender, Action* parameters)
 void GameScript::AddMapnote( Scriptable* Sender, Action* parameters)
 {
 	Map *map=Sender->GetCurrentArea();
-	char *str = core->GetString( parameters->int0Parameter, 0);
-	map->AddMapNote(parameters->pointParameter, parameters->int1Parameter, str, parameters->int0Parameter);
+	map->AddMapNote(parameters->pointParameter, parameters->int1Parameter, parameters->int0Parameter);
 }
 
 void GameScript::RemoveMapnote( Scriptable* Sender, Action* parameters)
@@ -5142,7 +5164,7 @@ void GameScript::DayNight(Scriptable* /*Sender*/, Action* parameters)
 	// then, calculate the offset (in hours) required to take us to the desired hour.
 	padding = (24 + parameters->int0Parameter - padding) % 24;
 	// then, advance one day (7200), plus the desired number of hours.
-	core->GetGame()->AdvanceTime(AI_UPDATE_TIME*(7200 + padding*300));
+	core->GetGame()->AdvanceTime(AI_UPDATE_TIME*(7200 + padding*300), false);
 }
 
 //implement pst style parameters:
@@ -5153,7 +5175,9 @@ void GameScript::DayNight(Scriptable* /*Sender*/, Action* parameters)
 void GameScript::RestParty(Scriptable* Sender, Action* parameters)
 {
 	Game *game = core->GetGame();
-	game->RestParty(REST_NOAREA|REST_NOMOVE|REST_NOCRITTER|REST_NOSCATTER, parameters->int0Parameter, parameters->int1Parameter);
+	unsigned int flags = REST_NOMOVE|REST_NOCRITTER|REST_NOSCATTER;
+	if (((Actor *)Sender)->InParty == 0) flags |= REST_NOAREA;
+	game->RestParty(flags, parameters->int0Parameter, parameters->int1Parameter);
 	Sender->ReleaseCurrentAction();
 }
 
@@ -5289,12 +5313,12 @@ void GameScript::MarkSpellAndObject(Scriptable* Sender, Action* parameters)
 		} else {
 			range = Distance(me, actor);
 		}
-		if (!(flags & MSO_IGNORE_INVALID) && actor->InvalidSpellTarget(splnum, me, range)) {
+		if (!(flags & MSO_IGNORE_INVALID) && actor && actor->InvalidSpellTarget(splnum, me, range)) {
 			goto end_mso_loop;
 		}
 		//mark spell and target
 		me->LastMarkedSpell = splnum;
-		me->LastMarked = actor->GetGlobalID();
+		me->LastMarked = tar->GetGlobalID();
 		break;
 end_mso_loop:
 		pos++;
@@ -5737,7 +5761,7 @@ void GameScript::SaveGame(Scriptable* /*Sender*/, Action* parameters)
 		if (tab) {
 			basename = tab->QueryDefault();
 		}
-		char * str = core->GetString( parameters->int0Parameter, IE_STR_STRREFOFF);
+		char * str = core->GetCString( parameters->int0Parameter, IE_STR_STRREFOFF);
 		char FolderName[_MAX_PATH];
 		snprintf (FolderName, sizeof(FolderName), "%s - %s", basename, str);
 		core->FreeString( str );
@@ -6028,20 +6052,9 @@ void GameScript::ApplySpell(Scriptable* Sender, Action* parameters)
 		//core->ApplySpell(spellres, (Actor *) tar, owner, parameters->int1Parameter);
 		core->ApplySpell(spellres, (Actor *) tar, Sender, parameters->int1Parameter);
 	} else {
-		//no idea about this one
-/*
-		Actor *owner;
-
-		if (Sender->Type==ST_ACTOR) {
-			owner = (Actor *) Sender;
-		} else {
-			owner = NULL;
-		}
-*/
 		//apply spell on point
 		Point d;
 		GetPositionFromScriptable(tar, d, false);
-		//core->ApplySpellPoint(spellres, tar->GetCurrentArea(), d, owner, parameters->int1Parameter);
 		core->ApplySpellPoint(spellres, tar->GetCurrentArea(), d, Sender, parameters->int1Parameter);
 	}
 }
@@ -6049,18 +6062,12 @@ void GameScript::ApplySpell(Scriptable* Sender, Action* parameters)
 void GameScript::ApplySpellPoint(Scriptable* Sender, Action* parameters)
 {
 	ieResRef spellres;
-	Actor *owner;
 
 	if (!ResolveSpellName( spellres, parameters) ) {
 		return;
 	}
 
-	if (Sender->Type==ST_ACTOR) {
-		owner = (Actor *) Sender;
-	} else {
-		owner = NULL;
-	}
-	core->ApplySpellPoint(spellres, Sender->GetCurrentArea(), parameters->pointParameter, owner, parameters->int1Parameter);
+	core->ApplySpellPoint(spellres, Sender->GetCurrentArea(), parameters->pointParameter, Sender, parameters->int1Parameter);
 }
 
 //this is a gemrb extension
@@ -6092,7 +6099,7 @@ void GameScript::PauseGame(Scriptable* Sender, Action* /*parameters*/)
 {
 	GameControl *gc = core->GetGameControl();
 	if (gc) {
-		gc->SetDialogueFlags(DF_FREEZE_SCRIPTS, BM_OR);
+		gc->SetDialogueFlags(DF_FREEZE_SCRIPTS, OP_OR);
 		displaymsg->DisplayConstantString(STR_SCRIPTPAUSED, DMC_RED);
 	}
 	// releasing this action allows actions to continue executing,
@@ -6152,6 +6159,10 @@ void GameScript::BashDoor(Scriptable* Sender, Action* parameters)
 	Door *door = NULL;
 	Container *container = NULL;
 	Point *pos;
+	if (!target) {
+		Sender->ReleaseCurrentAction();
+		return;
+	}
 	if (target->Type == ST_DOOR) {
 		door = (Door *) target;
 		pos = door->toOpen;
@@ -6257,9 +6268,9 @@ void GameScript::DialogueInterrupt(Scriptable* Sender, Action* parameters)
 	}
 	Actor* actor = ( Actor* ) Sender;
 	if ( parameters->int0Parameter != 0 ) {
-		actor->SetMCFlag(MC_NO_TALK, BM_NAND);
+		actor->SetMCFlag(MC_NO_TALK, OP_NAND);
 	} else {
-		actor->SetMCFlag(MC_NO_TALK, BM_OR);
+		actor->SetMCFlag(MC_NO_TALK, OP_OR);
 	}
 }
 
@@ -6800,13 +6811,14 @@ void GameScript::TransformPartyItemAll(Scriptable* /*Sender*/, Action* parameter
 	}
 }
 
+// pst spawning
 void GameScript::GeneratePartyMember(Scriptable* /*Sender*/, Action* parameters)
 {
 	AutoTable pcs("bios");
 	if (!pcs) {
 		return;
 	}
-	const char* string = pcs->QueryField( parameters->int0Parameter, 0 );
+	const char* string = pcs->GetRowName(parameters->int0Parameter);
 	int pos = gamedata->LoadCreature(string,0,false);
 	if (pos<0) {
 		return;

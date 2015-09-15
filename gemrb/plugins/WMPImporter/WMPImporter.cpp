@@ -32,6 +32,8 @@ WMPImporter::WMPImporter(void)
 {
 	str1 = NULL;
 	str2 = NULL;
+	WorldMapsCount = WorldMapsCount1 = WorldMapsCount2 = 0;
+	WorldMapsOffset1 = WorldMapsOffset2 = 0;
 }
 
 WMPImporter::~WMPImporter(void)
@@ -136,6 +138,9 @@ void WMPImporter::GetWorldMap(DataStream *str, WorldMap *m, unsigned int index)
 		Log(ERROR, "WMPImporter", "Worldmap image not found.");
 	} else {
 		m->SetMapMOS(mos->GetSprite2D());
+		if (!m->GetMapMOS()) {
+			Log(ERROR, "WMPImporter", "Worldmap image malformed!");
+		}
 	}
 
 	// Load location icon bam
@@ -175,7 +180,7 @@ WMPAreaEntry* WMPImporter::GetAreaEntry(DataStream *str, WMPAreaEntry* ae)
 	str->ReadDword( &tmpDword );
 	str->ReadDword( &ae->IconSeq );
 	//this should be set after iconseq is known
-	ae->SetAreaStatus( tmpDword, BM_SET );
+	ae->SetAreaStatus(tmpDword, OP_SET);
 	str->ReadDword( &ae->X );
 	str->ReadDword( &ae->Y );
 	str->ReadDword( &ae->LocCaptionName );

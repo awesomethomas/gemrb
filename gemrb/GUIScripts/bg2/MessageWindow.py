@@ -28,6 +28,7 @@ import GUICommonWindows
 import CommonWindow
 import GUIClasses
 import CommonTables
+from GameCheck import PARTY_SIZE
 from GUIDefines import *
 from CharGenEnd import GiveEquipment
 
@@ -107,8 +108,6 @@ def UpdateControlStatus():
 	#a dialogue is running, setting messagewindow size to maximum
 	if Override:
 		Expand = GS_LARGEDIALOG
-	
-	MessageWindow = GemRB.GetVar("MessageWindow")
 
 	GemRB.LoadWindowPack(GUICommon.GetWindowPack())
 
@@ -131,14 +130,14 @@ def UpdateControlStatus():
 		ExpandButton = TMessageWindow.GetControl(2)
 		ExpandButton.SetEvent(IE_GUI_BUTTON_ON_PRESS, CommonWindow.OnIncreaseSize)
 
-	TMessageTA.SetFlags(IE_GUI_TEXTAREA_AUTOSCROLL|IE_GUI_TEXTAREA_SPEAKER)
-	TMessageTA.SetHistory(100)
 	hideflag = GemRB.HideGUI()
+	MessageWindow = GemRB.GetVar("MessageWindow")
 	MessageTA = GUIClasses.GTextArea(MessageWindow,GemRB.GetVar("MessageTextArea"))
-	if MessageWindow>0 and MessageWindow!=TMessageWindow.ID:
-		MessageTA.MoveText(TMessageTA)
+	if MessageWindow > 0 and MessageWindow != TMessageWindow.ID:
+		TMessageTA = MessageTA.SubstituteForControl(TMessageTA)
 		GUIClasses.GWindow(MessageWindow).Unload()
 
+	TMessageTA.SetFlags(IE_GUI_TEXTAREA_AUTOSCROLL|IE_GUI_TEXTAREA_HISTORY)
 	GemRB.SetVar("MessageWindow", TMessageWindow.ID)
 	GemRB.SetVar("MessageTextArea", TMessageTA.ID)
 	if Override:
@@ -243,10 +242,7 @@ def FixInnates(pc):
 	new = [ "SPIN200", "SPIN201", "SPIN202", "SPIN203" ]
 	for i in range(len(old)):
 		if GemRB.RemoveSpell (pc, old[i]):
-			GemRB.LearnSpell (pc, new[i], LS_MEMO)
-			# ehh, acrobatics for a second memorization
-			SpellIndex = Spellbook.HasSpell (pc, IE_SPELL_TYPE_INNATE, 3, new[i])
-			GemRB.MemorizeSpell (pc, IE_SPELL_TYPE_INNATE, 3, SpellIndex)
+			Spellbook.LearnSpell (pc, new[i], IE_SPELL_TYPE_INNATE, 3, 2, LS_MEMO)
 
 #upgrade savegame to next version
 def GameExpansion():

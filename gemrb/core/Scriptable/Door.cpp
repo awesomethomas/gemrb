@@ -160,11 +160,19 @@ void Door::SetTiles(unsigned short* Tiles, int cnt)
 	tilecount = cnt;
 }
 
+bool Door::CanDetectTrap() const
+{
+    // Traps can be detected on all types of infopoint, as long
+    // as the trap is detectable and isn't deactivated.
+    return ((Flags&DOOR_DETECTABLE) && Trapped);
+}
+
 void Door::SetDoorLocked(int Locked, int playsound)
 {
 	if (Locked) {
 		if (Flags & DOOR_LOCKED) return;
 		Flags|=DOOR_LOCKED;
+		SetDoorOpen(false, playsound, 0);
 		if (playsound && ( LockSound[0] != '\0' ))
 			core->GetAudioDrv()->Play( LockSound );
 	}

@@ -28,7 +28,7 @@
 #include "ControlAnimation.h"
 #include "Interface.h"
 #include "ScriptEngine.h"
-#include "Video.h"
+#include "Sprite2D.h"
 
 #ifdef ANDROID
 #include "Variables.h"
@@ -42,7 +42,7 @@ namespace GemRB {
 Control::Control(const Region& frame)
 {
 	hasFocus = false;
-	Changed = true;
+	Changed = false; // no window to draw to yet.
 	InHandler = false;
 	VarName[0] = 0;
 	ControlID = 0;
@@ -68,31 +68,24 @@ Control::~Control()
 		Log(ERROR, "Control", "Destroying control inside event handler, crash may occur!");
 	}
 	core->DisplayTooltip( 0, 0, NULL );
-	free (Tooltip);
-
+	delete Tooltip;
 	delete animation;
 
-	core->GetVideoDriver()->FreeSprite(AnimPicture);
+	Sprite2D::FreeSprite(AnimPicture);
 }
 
-Region Control::ControlFrame()
+Region Control::ControlFrame() const
 {
 	return Region(XPos, YPos, Width, Height);
 }
 
-void Control::MarkDirty() {
-	if (!Changed) {
-		Changed = true;
-		if (Owner && !HasBackground()) {
-			// the window is our background so we must redraw the entire thing :(
-			Owner->InvalidateForControl(this);
-		}
-	}
-}
-
-bool Control::NeedsDraw()
+void Control::SetControlFrame(const Region& r)
 {
-	return (Changed || (Owner->Flags&WF_FLOAT));
+	// TODO: we should actually represent these with a private Region
+	XPos = r.x;
+	YPos = r.y;
+	Width = r.w;
+	Height = r.h;
 }
 
 void Control::Draw(unsigned short x, unsigned short y)
@@ -110,25 +103,29 @@ void Control::Draw(unsigned short x, unsigned short y)
 	}
 
 	Region drawFrame = Region(x + XPos, y + YPos, Width, Height);
-	Region clip;
 	Video* video = core->GetVideoDriver();
 	// clip drawing to the control bounds, then restore after drawing
-	video->GetClipRect(clip);
-	video->SetClipRect(&drawFrame);
+	Region clip = video->GetScreenClip();
+	video->SetScreenClip(&drawFrame);
 	DrawInternal(drawFrame);
-	video->SetClipRect(&clip);
+	video->SetScreenClip(&clip);
 	Changed = false; // set *after* calling DrawInternal
+}
+
+void Control::SetText(const String* string)
+{
+	SetText((string) ? *string : L"");
 }
 
 /** Sets the Tooltip text of the current control */
 int Control::SetTooltip(const char* string)
 {
-	free(Tooltip);
-
+	delete Tooltip;
 	if ((string == NULL) || (string[0] == 0)) {
 		Tooltip = NULL;
 	} else {
-		Tooltip = strdup (string);
+		Tooltip = StringFromCString(string);
+		TrimString(*Tooltip); // for proper vertical alaignment
 	}
 	Changed = true;
 	return 0;
@@ -143,19 +140,15 @@ void Control::DisplayTooltip()
 		core->DisplayTooltip( 0, 0, NULL );
 }
 
-void Control::ResetEventHandler(EventHandler &handler)
+void Control::ResetEventHandler(ControlEventHandler &handler)
 {
 	handler = NULL;
-}
-
-void Control::SetText(const char* /*string*/)
-{
 }
 
 //return -1 if there is an error
 //return 1 if there is no handler (not an error)
 //return 0 if the handler ran as intended
-int Control::RunEventHandler(EventHandler handler)
+int Control::RunEventHandler(ControlEventHandler handler)
 {
 	if (InHandler) {
 		Log(WARNING, "Control", "Nested event handlers are not supported!");
@@ -170,7 +163,7 @@ int Control::RunEventHandler(EventHandler handler)
 		unsigned short ID = (unsigned short) ControlID;
 		InHandler = true;
 		//TODO: detect caller errors, trap them???
-		handler->call();
+		handler(this);
 		InHandler = false;
 		if (!core->IsValidWindow(WID,wnd) ) {
 			Log(ERROR, "Control", "Owner window destructed!");
@@ -242,25 +235,27 @@ int Control::SetFlags(int arg_flags, int opcode)
 			arg_flags, ControlID, opcode);
 		return -2;
 	}
+	ieDword newFlags = Flags;
 	switch (opcode) {
-		case BM_SET:
-			Flags = arg_flags;  //set
+		case OP_SET:
+			newFlags = arg_flags;  //set
 			break;
-		case BM_AND:
-			Flags &= arg_flags;
+		case OP_AND:
+			newFlags &= arg_flags;
 			break;
-		case BM_OR:
-			Flags |= arg_flags; //turn on
+		case OP_OR:
+			newFlags |= arg_flags; //turn on
 			break;
-		case BM_XOR:
-			Flags ^= arg_flags;
+		case OP_XOR:
+			newFlags ^= arg_flags;
 			break;
-		case BM_NAND:
-			Flags &= ~arg_flags;//turn off
+		case OP_NAND:
+			newFlags &= ~arg_flags;//turn off
 			break;
 		default:
 			return -1;
 	}
+	Flags = newFlags;
 	Changed = true;
 	Owner->Invalidate();
 	return 0;
@@ -268,13 +263,9 @@ int Control::SetFlags(int arg_flags, int opcode)
 
 void Control::SetAnimPicture(Sprite2D* newpic)
 {
-	core->GetVideoDriver()->FreeSprite(AnimPicture);
+	Sprite2D::FreeSprite(AnimPicture);
 	AnimPicture = newpic;
-	//apparently this is needed too, so the artifacts are not visible
-	if (Owner->Visible==WINDOW_VISIBLE) {
-		Changed = true;
-		Owner->InvalidateForControl(this);
-	}
+	MarkDirty();
 }
 
 /** Sets the Scroll Bar Pointer. If 'ptr' is NULL no Scroll Bar will be linked
@@ -282,14 +273,12 @@ void Control::SetAnimPicture(Sprite2D* newpic)
 int Control::SetScrollBar(Control* ptr)
 {
 	if (ptr && (ptr->ControlType!=IE_GUI_SCROLLBAR)) {
-		ptr = NULL;
 		Log(WARNING, "Control", "Attached control is not a ScrollBar!");
 		return -1;
 	}
 	sb = ptr;
 	Changed = true;
-	if (ptr) return 1;
-	return 0;
+	return (bool)sb;
 }
 
 }

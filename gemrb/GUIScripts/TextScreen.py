@@ -19,6 +19,7 @@
 #################### Interchapter text screen functions #################
 
 import GemRB
+from ie_restype import RES_2DA
 from GUIDefines import *
 import GUICommon
 import GameCheck
@@ -63,7 +64,8 @@ def StartTextScreen ():
 	if TableName == "":
 		EndTextScreen ()
 		return
-	else:
+
+	if GemRB.HasResource ("textscrn", RES_2DA, 1):
 		TextTable = GemRB.LoadTable ("textscrn", 1)
 		if TextTable != None:
 			TxtRow = TextTable.GetRowIndex (TableName)
@@ -80,8 +82,14 @@ def StartTextScreen ():
 	else:
 		GemRB.LoadWindowPack ("GUICHAP", 640, 480)
 
+	Table = GemRB.LoadTable (TableName)
 	if GameCheck.IsBG2():
-		ID = 62
+		LoadPic = Table.GetValue (-1, -1)
+		if LoadPic.startswith ("*"): # BG2 epilogues
+			ID = 63
+			LoadPic = LoadPic.replace ("*", "")
+		else:
+			ID = 62
 	elif ID == -1:
 		#default: try to determine ID from current chapter
 		ID = GemRB.GetGameVar("CHAPTER") & 0x7fffffff
@@ -96,17 +104,20 @@ def StartTextScreen ():
 	TextScreen.SetFrame ()
 
 	TextArea = TextScreen.GetControl (2)
-	TextArea.SetFlags (IE_GUI_TEXTAREA_SMOOTHSCROLL)
 
-	Table = GemRB.LoadTable (TableName)
 	if GameCheck.IsBG1():
 		#these suckers couldn't use a fix row
 		FindTextRow (Table)
 	elif GameCheck.IsBG2():
-		LoadPic = Table.GetValue (-1, -1)
-		if LoadPic != "":
-			TextScreen.SetPicture (LoadPic)
 		FindTextRow (Table)
+		if LoadPic != "":
+			if ID == 63:
+				#only for BG2 epilogue windows
+				PicButton = TextScreen.GetControl (4)
+				PicButton.SetPicture (LoadPic)
+				PicButton.SetState (IE_GUI_BUTTON_LOCKED)
+			else:
+				TextScreen.SetPicture (LoadPic)
 	else:
 		Row = Chapter
 
@@ -133,12 +144,13 @@ def StartTextScreen ():
 	GemRB.HideGUI ()
 	GUICommon.GameWindow.SetVisible(WINDOW_INVISIBLE) #removing the gamecontrol screen
 	TextScreen.SetVisible (WINDOW_VISIBLE)
+	TextScreen.ShowModal (MODAL_SHADOW_NONE)
 
 	ReplayTextScreen()
 	return
 
 def EndTextScreen ():
-	global TextScreen
+	global TextScreen, TableName
 
 	if TextScreen:
 		TextScreen.SetVisible (WINDOW_INVISIBLE)
@@ -148,12 +160,16 @@ def EndTextScreen ():
 	GUICommon.GameWindow.SetVisible(WINDOW_VISIBLE) # enable the gamecontrol screen
 	GemRB.UnhideGUI ()
 	GemRB.GamePause (0, 3)
+
+	if TableName == "25ecred":
+		GemRB.SetNextScript("QuitGame")
 	return
 
 def ReplayTextScreen ():
 	global TextArea, TableName, Row
 
-	TextArea.Rewind ()
+	# stop any current speech, flag of 5 = GEM_SND_RELATIVE|GEM_SND_SPEECH
+	GemRB.PlaySound(None, 0, 0, 5)
 
 	Table = GemRB.LoadTable (TableName)
 	Count = Table.GetColumnCount (Row)
@@ -163,9 +179,11 @@ def ReplayTextScreen ():
 	if GameCheck.IsIWD1() or GameCheck.IsIWD2():
 		Count = 2
 
+	text = ""
 	for i in range(1, Count):
-		TextArea.Append ("\n")
 		# flag value of 14 = IE_STR_SOUND|IE_STR_SPEECH/GEM_SND_SPEECH|GEM_SND_QUEUE
-		TextArea.Append (Table.GetValue (Row, i), -1, 14)
+		text += "\n\n" + GemRB.GetString(Table.GetValue (Row, i), 14)
+
+	TextArea.ChapterText (text)
 
 	return

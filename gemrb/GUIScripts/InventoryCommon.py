@@ -310,12 +310,11 @@ def DisplayItem (itemresref, type):
 	drink = (type&1) and (item["Function"]&1)
 	read = (type&1) and (item["Function"]&2)
 	# sorcerers cannot learn spells
-	# FIXME: unhardcode
 	pc = GemRB.GameGetSelectedPCSingle ()
-	if GemRB.GetPlayerStat (pc, IE_CLASS) == 19:
+	if Spellbook.HasSorcererBook (pc):
 		read = 0
 	container = (type&1) and (item["Function"]&4)
-	dialog = (type&1) and (item["Dialog"]!="")
+	dialog = (type&1) and (item["Dialog"]!="" and item["Dialog"]!="*")
 	familiar = (type&1) and (item["Type"] == 38)
 	if drink:
 		Button.SetText (strrefs[3])
@@ -693,7 +692,10 @@ def OpenErrorWindow (strref):
 
 	ErrorWindow = Window = GemRB.LoadWindow (7)
 	Button = Window.GetControl (0)
-	Button.SetText (11973)
+	if GameCheck.IsPST():
+		Button.SetText (1403)
+	else:
+		Button.SetText (11973)
 	Button.SetEvent (IE_GUI_BUTTON_ON_PRESS, CloseErrorWindow)
 	Button.SetFlags (IE_GUI_BUTTON_DEFAULT, OP_OR)
 
@@ -717,11 +719,15 @@ def ReadItemWindow ():
 	ret = Spellbook.CannotLearnSlotSpell()
 
 	if ret:
-		# couldn't find any strrefs for the other undhandled values (stat, level)
 		if ret == LSR_KNOWN and GameCheck.HasTOB():
 			strref = 72873
 		elif ret == LSR_KNOWN and GameCheck.IsPST():
 			strref = 50394
+		elif ret == LSR_STAT and GameCheck.HasTOB():
+			# reached for sorcerers, schools/usability is handled before
+			strref = 72874 # your spell school does not permit you to learn
+		elif ret == LSR_LEVEL and GameCheck.HasTOB():
+			strref = 48806 # inadequate intelligence (good enough approximation)
 		elif ret == LSR_FULL and GameCheck.IsBG2():
 			strref = 32097
 		elif ret == LSR_FULL and GameCheck.IsPST():
@@ -798,7 +804,10 @@ def IdentifyUseSpell ():
 	global ItemIdentifyWindow
 
 	pc = GemRB.GameGetSelectedPCSingle ()
-	slot = GemRB.GetVar ("ItemButton")
+	if GameCheck.IsPST():
+		slot, slot_item = GUIINV.ItemHash[GemRB.GetVar ('ItemButton')]
+	else:
+		slot = GemRB.GetVar ("ItemButton")
 	if ItemIdentifyWindow:
 		ItemIdentifyWindow.Unload ()
 	GemRB.HasSpecialSpell (pc, SP_IDENTIFY, 1)
@@ -815,7 +824,10 @@ def IdentifyUseScroll ():
 	global ItemIdentifyWindow
 
 	pc = GemRB.GameGetSelectedPCSingle ()
-	slot = GemRB.GetVar ("ItemButton")
+	if GameCheck.IsPST():
+		slot, slot_item = GUIINV.ItemHash[GemRB.GetVar ('ItemButton')]
+	else:
+		slot = GemRB.GetVar ("ItemButton")
 	if ItemIdentifyWindow:
 		ItemIdentifyWindow.Unload ()
 	if ItemInfoWindow:

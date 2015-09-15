@@ -228,8 +228,7 @@ void GameControl::CreateMovement(Actor *actor, const Point &p)
 	static bool CanRun = true;
 
 	//try running (in PST) only if not encumbered
-	ieDword speed = actor->CalculateSpeed(true);
-	if ( (speed==actor->GetStat(IE_MOVEMENTRATE)) && CanRun && (DoubleClick || AlwaysRun)) {
+	if (CanRun && ShouldRun(actor)) {
 		sprintf( Tmp, "RunToPoint([%d.%d])", p.x, p.y );
 		action = GenerateAction( Tmp );
 		//if it didn't work don't insist
@@ -244,6 +243,17 @@ void GameControl::CreateMovement(Actor *actor, const Point &p)
 	actor->CommandActor(action);
 }
 
+// were we instructed to run and can handle it (no movement impairments)?
+bool GameControl::ShouldRun(Actor *actor) const
+{
+	if (!actor) return false;
+	ieDword speed = actor->CalculateSpeed(true);
+	if (speed != actor->GetStat(IE_MOVEMENTRATE)) {
+		return false;
+	}
+	return (DoubleClick || AlwaysRun);
+}
+
 GameControl::~GameControl(void)
 {
 	//releasing the viewport of GameControl
@@ -253,9 +263,7 @@ GameControl::~GameControl(void)
 		formations = NULL;
 	}
 	delete dialoghandler;
-	if (DisplayText) {
-		core->FreeString(DisplayText);
-	}
+	delete DisplayText;
 }
 
 // ArrowSprite cycles
@@ -594,17 +602,17 @@ void GameControl::DrawInternal(Region& screen)
 	if (DebugFlags & DEBUG_SHOW_LIGHTMAP) {
 		Sprite2D* spr = area->LightMap->GetSprite2D();
 		video->BlitSprite( spr, 0, 0, true );
-		video->FreeSprite( spr );
+		Sprite2D::FreeSprite( spr );
 		Region point( p.x / 16, p.y / 12, 2, 2 );
 		video->DrawRect( point, ColorRed );
 	}
 
 	if (core->HasFeature(GF_ONSCREEN_TEXT) && DisplayText) {
-		core->GetFont(1)->Print(screen, (unsigned char *)DisplayText, core->InfoTextPalette, IE_FONT_ALIGN_CENTER | IE_FONT_ALIGN_MIDDLE, true);
+		core->GetTextFont()->Print(screen, *DisplayText, core->InfoTextPalette, IE_FONT_ALIGN_CENTER | IE_FONT_ALIGN_MIDDLE);
 		if (update_scripts) {
 			// just replicating original engine behaviour
 			if (DisplayTextTime == 0) {
-				SetDisplayText((char *)NULL, 0);
+				SetDisplayText((String*)NULL, 0);
 			} else {
 				DisplayTextTime--;
 			}
@@ -812,7 +820,10 @@ bool GameControl::OnKeyRelease(unsigned char Key, unsigned short Mod)
 					overDoor->DetectTrap(256, lastActorID);
 				}
 				break;
-			// e, f
+			case 'e':// reverses pc order (useful for parties bigger than 6)
+				game->ReversePCs();
+				break;
+			// f
 			case 'g'://shows loaded areas and other game information
 				game->dump();
 				break;
@@ -1101,7 +1112,6 @@ void GameControl::DisplayTooltip() {
 					} else {
 						// non-neutral, not in party: display injured string
 						int strindex;
-						char *injuredstring = NULL;
 						// these boundaries are just a guess
 						if (hp == maxhp) {
 							strindex = STR_UNINJURED;
@@ -1115,16 +1125,14 @@ void GameControl::DisplayTooltip() {
 							strindex = STR_INJURED4;
 						}
 						strindex = displaymsg->GetStringReference(strindex);
-						if (strindex != -1) {
-							injuredstring = core->GetString(strindex, 0);
-						}
+						String* injuredstring = core->GetString(strindex, 0);
 
 						if (!injuredstring) {
 							// eek, where did the string go?
 							snprintf(buffer, 100, "%s\n%d/%d", name, hp, maxhp);
 						} else {
-							snprintf(buffer, 100, "%s\n%s", name, injuredstring);
-							free(injuredstring);
+							snprintf(buffer, 100, "%s\n%ls", name, injuredstring->c_str());
+							delete injuredstring;
 						}
 					}
 				}
@@ -1271,6 +1279,12 @@ void GameControl::OnMouseOver(unsigned short x, unsigned short y)
 		//nextCursor = overInfoPoint->Cursor;
 		nextCursor = GetCursorOverInfoPoint(overInfoPoint);
 	}
+	// recheck in case the positioon was different, resulting in a new isVisible check
+	if (nextCursor == IE_CURSOR_INVALID) {
+		Owner->Cursor = IE_CURSOR_BLOCKED;
+		lastCursor = IE_CURSOR_BLOCKED;
+		return;
+	}
 
 	if (overDoor) {
 		overDoor->Highlight = false;
@@ -1293,6 +1307,13 @@ void GameControl::OnMouseOver(unsigned short x, unsigned short y)
 
 		if (overContainer) {
 			nextCursor = GetCursorOverContainer(overContainer);
+		}
+		// recheck in case the positioon was different, resulting in a new isVisible check
+		// fixes bg2 long block door in ar0801 above vamp beds, crashing on mouseover (too big)
+		if (nextCursor == IE_CURSOR_INVALID) {
+			Owner->Cursor = IE_CURSOR_BLOCKED;
+			lastCursor = IE_CURSOR_BLOCKED;
+			return;
 		}
 
 		Actor *prevActor = lastActor;
@@ -1505,7 +1526,7 @@ void GameControl::UpdateScrolling() {
 	Sprite2D* cursor = core->GetScrollCursorSprite(cursorFrame, numScrollCursor);
 	Video* video = core->GetVideoDriver();
 	video->SetCursor(cursor, VID_CUR_DRAG);
-	video->FreeSprite(cursor);
+	Sprite2D::FreeSprite(cursor);
 
 	numScrollCursor = (numScrollCursor+1) % 15;
 }
@@ -1614,6 +1635,9 @@ void GameControl::TryToCast(Actor *source, const Point &tgt)
 		action->int0Parameter = spellSlot;
 		action->int1Parameter = spellIndex;
 		action->int2Parameter = UI_SILENT;
+                //for multi-shot items like BG wand of lightning
+                if (spellCount)
+                    action->int2Parameter |= UI_NOAURA|UI_NOCHARGE;
 	}
 	source->AddAction( action );
 	if (!spellCount) {
@@ -1634,7 +1658,7 @@ void GameControl::TryToCast(Actor *source, Actor *tgt)
 
 	// cannot target spells on invisible or sanctuaried creatures
 	// invisible actors are invisible, so this is usually impossible by itself, but improved invisibility changes that
-	if (source != tgt && tgt->Untargetable() ) {
+	if (source != tgt && tgt->Untargetable(spellName)) {
 		displaymsg->DisplayConstantStringName(STR_NOSEE_NOCAST, DMC_RED, source);
 		ResetTargetMode();
 		return;
@@ -1670,6 +1694,9 @@ void GameControl::TryToCast(Actor *source, Actor *tgt)
 		action->int0Parameter = spellSlot;
 		action->int1Parameter = spellIndex;
 		action->int2Parameter = UI_SILENT;
+                //for multi-shot items like BG wand of lightning
+                if (spellCount)
+                    action->int2Parameter |= UI_NOAURA|UI_NOCHARGE;
 	}
 	source->AddAction( action );
 	if (!spellCount) {
@@ -1685,7 +1712,7 @@ void GameControl::TryToTalk(Actor *source, Actor *tgt)
 	//i found no fitting action which would emulate this kind of
 	//dialog initation
 	source->SetModal(MS_NONE);
-	dialoghandler->targetID = tgt->GetGlobalID(); //this is a hack, but not so deadly
+	dialoghandler->SetTarget(tgt); //this is a hack, but not so deadly
 	source->CommandActor(GenerateActionDirect( "NIDSpecial1()", tgt));
 }
 
@@ -1779,11 +1806,16 @@ bool GameControl::HandleActiveRegion(InfoPoint *trap, Actor * actor, Point &p)
 			trap->GetCurrentArea()->LastGoCloser = 0;
 			return false;
 		case ST_TRIGGER:
+			// pst, eg. ar1500
+			if (trap->GetDialog()[0]) {
+				trap->AddAction(GenerateAction("Dialogue([PC])"));
+				return true;
+			}
+
 			// always display overhead text; totsc's ar0511 library relies on it
-			if (trap->overHeadText) {
-				if (trap->textDisplaying != 1) {
-					trap->textDisplaying = 1;
-					trap->timeStartDisplaying = core->GetGame()->Ticks;
+			if (!trap->GetOverheadText().empty()) {
+				if (!trap->OverheadTextIsDisplaying()) {
+					trap->DisplayOverheadText(true);
 					DisplayString( trap );
 				}
 			}
@@ -1935,10 +1967,18 @@ void GameControl::OnMouseUp(unsigned short x, unsigned short y, unsigned short B
 					}
 					if (overInfoPoint) {
 						if (overInfoPoint->Type==ST_TRAVEL) {
-							int i = game->selected.size();
 							ieDword exitID = overInfoPoint->GetGlobalID();
-							while(i--) {
-								game->selected[i]->UseExit(exitID);
+							if (core->HasFeature(GF_TEAM_MOVEMENT)) {
+								// pst forces everyone to travel (eg. ar0201 outside_portal)
+								int i = game->GetPartySize(false);
+								while(i--) {
+									game->GetPC(i, false)->UseExit(exitID);
+								}
+							} else {
+								int i = game->selected.size();
+								while(i--) {
+									game->selected[i]->UseExit(exitID);
+								}
 							}
 						}
 						if (HandleActiveRegion(overInfoPoint, pc, p)) {
@@ -2034,7 +2074,6 @@ void GameControl::OnMouseUp(unsigned short x, unsigned short y, unsigned short B
 	}
 	FormationRotation = false;
 	core->GetEventMgr()->FakeMouseMove();
-	return;
 }
 
 void GameControl::OnMouseWheelScroll(short x, short y)
@@ -2350,14 +2389,14 @@ bool GameControl::SetGUIHidden(bool hide)
 	WINDOW_RESIZE_OPERATION op = hide ? WINDOW_EXPAND : WINDOW_CONTRACT;
 	for (;i >= 0 && i <= 5; i+=inc) {
 		const char** val = keys[i];
-		Log(MESSAGE, "GameControl", "window: %s", *val);
+		//Log(MESSAGE, "GameControl", "window: %s", *val);
 		if (dict->Lookup( *val, index )) {
 			if (index != (ieDword) -1) {
 				Window* w = core->GetWindow(index);
 				if (w) {
 					core->SetVisible(index, !hide);
 					if (dict->Lookup( *++val, index )) {
-						Log(MESSAGE, "GameControl", "position: %s", *val);
+						//Log(MESSAGE, "GameControl", "position: %s", *val);
 						ResizeParentWindowFor( w, index, op );
 						continue;
 					}
@@ -2424,38 +2463,20 @@ void GameControl::ResizeParentWindowFor(Window* win, int type, WINDOW_RESIZE_OPE
 	}
 }
 
-//Create an overhead text over an arbitrary point
-// UNUSED
-void GameControl::DisplayString(const Point &p, const char *Text)
-{
-	Scriptable* scr = new Scriptable( ST_TRIGGER );
-	scr->overHeadText = (char *) Text;
-	scr->textDisplaying = 1;
-	scr->timeStartDisplaying = 0;
-	scr->Pos = p;
-}
-
 //Create an overhead text over a scriptable target
 //Multiple texts are possible, as this code copies the text to a new object
 void GameControl::DisplayString(Scriptable* target)
 {
 	Scriptable* scr = new Scriptable( ST_TRIGGER );
-	scr->overHeadText = strdup( target->overHeadText );
-/* strdup should work here, we use it elsewhere
-	size_t len = strlen( target->overHeadText ) + 1;
-	scr->overHeadText = ( char * ) malloc( len );
-	strcpy( scr->overHeadText, target->overHeadText );
-*/
-	scr->textDisplaying = 1;
-	scr->timeStartDisplaying = target->timeStartDisplaying;
+	scr->SetOverheadText(target->GetOverheadText());
 	scr->Pos = target->Pos;
 
 	// add as a "subtitle" to the main message window
 	ieDword tmp = 0;
 	core->GetDictionary()->Lookup("Duplicate Floating Text", tmp);
-	if (tmp) {
+	if (tmp && !target->GetOverheadText().empty()) {
 		// pass NULL target so pst does not display multiple
-		displaymsg->DisplayString(target->overHeadText, NULL);
+		displaymsg->DisplayString(target->GetOverheadText());
 	}
 }
 
@@ -2484,26 +2505,14 @@ void GameControl::ChangeMap(Actor *pc, bool forced)
 	}
 }
 
-void GameControl::SetScreenFlags(int value, int mode)
+void GameControl::SetScreenFlags(unsigned int value, int mode)
 {
-	switch(mode) {
-		case BM_OR: ScreenFlags|=value; break;
-		case BM_NAND: ScreenFlags&=~value; break;
-		case BM_SET: ScreenFlags=value; break;
-		case BM_AND: ScreenFlags&=value; break;
-		case BM_XOR: ScreenFlags^=value; break;
-	}
+	core->SetBits(ScreenFlags, value, mode);
 }
 
-void GameControl::SetDialogueFlags(int value, int mode)
+void GameControl::SetDialogueFlags(unsigned int value, int mode)
 {
-	switch(mode) {
-		case BM_OR: DialogueFlags|=value; break;
-		case BM_NAND: DialogueFlags&=~value; break;
-		case BM_SET: DialogueFlags=value; break;
-		case BM_AND: DialogueFlags&=value; break;
-		case BM_XOR: DialogueFlags^=value; break;
-	}
+	core->SetBits(DialogueFlags, value, mode);
 }
 
 //copies a screenshot into a sprite
@@ -2556,7 +2565,7 @@ Sprite2D* GameControl::GetPreview()
 	Sprite2D *screenshot = GetScreenshot( Region(x, y, w, h) );
 
 	Sprite2D* preview = video->SpriteScaleDown ( screenshot, 5 );
-	video->FreeSprite( screenshot );
+	Sprite2D::FreeSprite( screenshot );
 	return preview;
 }
 
@@ -2588,7 +2597,7 @@ Sprite2D* GameControl::GetPortraitPreview(int pcslot)
 		return img;
 
 	Sprite2D* img_scaled = video->SpriteScaleDown( img, ratio );
-	video->FreeSprite( img );
+	Sprite2D::FreeSprite( img );
 
 	return img_scaled;
 }
@@ -2652,16 +2661,14 @@ void GameControl::SetupCasting(ieResRef spellname, int type, int level, int idx,
 }
 
 //another method inherited from Control which has no use here
-bool GameControl::SetEvent(int /*eventType*/, EventHandler /*handler*/)
+bool GameControl::SetEvent(int /*eventType*/, ControlEventHandler /*handler*/)
 {
 	return false;
 }
 
-void GameControl::SetDisplayText(char *text, unsigned int time)
+void GameControl::SetDisplayText(String* text, unsigned int time)
 {
-	if (DisplayText) {
-		core->FreeString(DisplayText);
-	}
+	delete DisplayText;
 	DisplayTextTime = time;
 	DisplayText = text;
 }

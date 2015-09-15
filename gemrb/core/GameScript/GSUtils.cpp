@@ -24,6 +24,7 @@
 #include "strrefs.h"
 #include "defsounds.h"
 #include "ie_feats.h"
+#include "voodooconst.h"
 
 #include "AmbientMgr.h"
 #include "Audio.h"
@@ -118,6 +119,11 @@ void InitScriptTables()
 			rmodchr[charisma] = strtol(rmc->QueryField(0, charisma), NULL, 0);
 		}
 	}
+
+	// see note in voodooconst.h
+	if (core->HasFeature(GF_AREA_OVERRIDE)) {
+		MAX_OPERATING_DISTANCE = 40*3;
+	}
 }
 
 int GetReaction(Actor *target, Scriptable *Sender)
@@ -156,7 +162,7 @@ int GetHappiness(Scriptable* Sender, int reputation)
 	if (reputation > 200) {
 		reputation = 200;
 	}
-	return happiness[alignment][reputation/10-1];
+	return happiness[alignment-1][reputation/10-1];
 }
 
 int GetHPPercent(Scriptable* Sender)
@@ -179,19 +185,19 @@ int GetHPPercent(Scriptable* Sender)
 void HandleBitMod(ieDword &value1, ieDword value2, int opcode)
 {
 	switch(opcode) {
-		case BM_AND:
+		case OP_AND:
 			value1 = ( value1& value2 );
 			break;
-		case BM_OR:
+		case OP_OR:
 			value1 = ( value1| value2 );
 			break;
-		case BM_XOR:
+		case OP_XOR:
 			value1 = ( value1^ value2 );
 			break;
-		case BM_NAND: //this is a GemRB extension
+		case OP_NAND: //this is a GemRB extension
 			value1 = ( value1& ~value2 );
 			break;
-		case BM_SET: //this is a GemRB extension
+		case OP_SET: //this is a GemRB extension
 			value1 = value2;
 			break;
 	}
@@ -441,16 +447,14 @@ static bool GetItemContainer(CREItem &itemslot2, Inventory *inventory, const ieR
 
 void DisplayStringCore(Scriptable* const Sender, int Strref, int flags)
 {
-	StringBlock sb;
-	char Sound[_MAX_PATH];
-
 	//no one hears you when you are in the Limbo!
 	if (!Sender->GetCurrentArea()) {
 		return;
 	}
 
-	memset(&sb,0,sizeof(sb));
-	Sound[0]=0;
+	char Sound[_MAX_PATH] = "";
+	ieResRef soundRef = {};
+
 	Log(MESSAGE, "GameScript", "Displaying string on: %s", Sender->GetScriptName() );
 	if (flags & DS_CONST) {
 		if (Sender->Type!=ST_ACTOR) {
@@ -466,12 +470,12 @@ void DisplayStringCore(Scriptable* const Sender, int Strref, int flags)
 		int tmp=(int) actor->GetVerbalConstant(Strref);
 		if (tmp <= 0 || (actor->GetStat(IE_MC_FLAGS) & MC_EXPORTABLE)) {
 			//get soundset based string constant
-			actor->ResolveStringConstant( sb.Sound, (unsigned int) Strref);
+			actor->ResolveStringConstant(soundRef, (unsigned int) Strref);
 			if (actor->PCStats && actor->PCStats->SoundFolder[0]) {
 				snprintf(Sound, _MAX_PATH, "%s/%s",
-					actor->PCStats->SoundFolder, sb.Sound);
+					actor->PCStats->SoundFolder, soundRef);
 			} else {
-				memcpy(Sound, sb.Sound, sizeof(ieResRef) );
+				memcpy(Sound, soundRef, sizeof(ieResRef) );
 			}
 		}
 		Strref = tmp;
@@ -484,26 +488,25 @@ void DisplayStringCore(Scriptable* const Sender, int Strref, int flags)
 		}
 	}
 
-	if ((Strref != -1) && !sb.Sound[0]) {
-		sb = core->strings->GetStringBlock( Strref );
+	if ((Strref != -1) && !soundRef[0]) {
+		StringBlock sb = core->strings->GetStringBlock( Strref );
 		memcpy(Sound, sb.Sound, sizeof(ieResRef) );
-		if (sb.text[0] && strcmp(sb.text," ") && (flags & DS_CONSOLE)) {
-			//can't play the sound here, we have to delay action
-			//and for that, we have to know how long the text takes
-			if(flags&DS_NONAME) {
-				displaymsg->DisplayString( sb.text );
-			} else {
-				displaymsg->DisplayStringName( Strref, DMC_WHITE, Sender, 0);
+		if (sb.text) {
+			if (flags & DS_CONSOLE) {
+				//can't play the sound here, we have to delay action
+				//and for that, we have to know how long the text takes
+				if(flags&DS_NONAME) {
+					displaymsg->DisplayString(*sb.text);
+				} else {
+					displaymsg->DisplayStringName( Strref, DMC_WHITE, Sender, 0);
+				}
 			}
-		}
-		if (sb.text[0] && strcmp(sb.text," ") && (flags & (DS_HEAD | DS_AREA))) {
-			Sender->DisplayHeadText( sb.text );
-			//don't free sb.text, it is residing in Sender
-			if (flags & DS_AREA) {
-				Sender->FixHeadTextPos();
+			if (flags & (DS_HEAD | DS_AREA)) {
+				Sender->SetOverheadText( *sb.text );
+				if (flags & DS_AREA) {
+					Sender->FixHeadTextPos();
+				}
 			}
-		} else {
-			core->FreeString( sb.text );
 		}
 	}
 	if (Sound[0] && !(flags&DS_SILENT) ) {
@@ -543,11 +546,11 @@ int CanSee(Scriptable* Sender, Scriptable* target, bool range, int seeflag)
 			Actor* snd = ( Actor* ) Sender;
 			dist = snd->Modified[IE_VISUALRANGE];
 		} else {
-			dist = 30;
+			dist = VOODOO_VISUAL_RANGE;
 			los = false;
 		}
 
-		if (Distance(target->Pos, Sender->Pos) > dist * 15) {
+		if (Distance(target->Pos, Sender->Pos) > dist * VOODOO_CANSEE_F) {
 			return 0;
 		}
 		if (!los) {
@@ -788,7 +791,7 @@ static ScriptedAnimation *GetVVCEffect(const char *effect, int iterations)
 			Log(ERROR, "GameScript", "Failed to create effect.");
 			return NULL;
 		}
-		if (iterations) {
+		if (iterations > 1) {
 			vvc->SetDefaultDuration( vvc->GetSequenceDuration(AI_UPDATE_TIME * iterations));
 		} else {
 			vvc->PlayOnce();
@@ -831,7 +834,7 @@ void ChangeAnimationCore(Actor *src, const char *resref, bool effect)
 		// can't SetPosition while the old actor is taking the spot
 		tar->SetPosition(pos, 1);
 		if (effect) {
-			CreateVisualEffectCore(tar, tar->Pos,"smokepuffeffect",1);
+			CreateVisualEffectCore(tar, tar->Pos, "spsmpuff", 1);
 		}
 	}
 }
@@ -922,22 +925,26 @@ static ieResRef PlayerDialogRes = "PLAYERx\0";
 
 void BeginDialog(Scriptable* Sender, Action* parameters, int Flags)
 {
-	Scriptable* tar, *scr;
-	int seeflag = GA_NO_DEAD;
+	Scriptable* tar = NULL, *scr = NULL;
 
 	if (InDebug&ID_VARIABLES) {
 		Log(MESSAGE, "GSUtils", "BeginDialog core");
 	}
+	tar = GetStoredActorFromObject(Sender, parameters->objects[1], GA_NO_DEAD);
 	if (Flags & BD_OWN) {
-		tar = GetStoredActorFromObject( Sender, parameters->objects[1], seeflag);
 		scr = tar;
 	} else {
-		tar = GetStoredActorFromObject( Sender, parameters->objects[1], seeflag);
 		scr = Sender;
 	}
 	if (!scr) {
+		assert(Sender);
 		Log(ERROR, "GameScript", "Speaker for dialog couldn't be found (Sender: %s, Type: %d) Flags:%d.",
 			Sender->GetScriptName(), Sender->Type, Flags);
+		Sender->ReleaseCurrentAction();
+		return;
+	}
+	// do not allow disabled actors to start dialog
+	if (!(scr->GetInternalFlag() & IF_VISIBLE)) {
 		Sender->ReleaseCurrentAction();
 		return;
 	}
@@ -1076,13 +1083,6 @@ void BeginDialog(Scriptable* Sender, Action* parameters, int Flags)
 			break;
 	}
 
-
-	//dialog is not meaningful
-	if (!Dialog || Dialog[0]=='*') {
-		Sender->ReleaseCurrentAction();
-		return;
-	}
-
 	// moved this here from InitDialog, because InitDialog doesn't know which side is which
 	// post-swap (and non-actors always have IF_NOINT set) .. also added a check that it's
 	// actually busy doing something, for the same reason
@@ -1122,47 +1122,40 @@ void BeginDialog(Scriptable* Sender, Action* parameters, int Flags)
 		if (scr->Type==ST_ACTOR) {
 			// might not be equal to speaker anymore due to swapping
 			Actor *talker = (Actor *) scr;
-			talker->SetOrientation(GetOrient( tar->Pos, scr->Pos), true);
-			if (talker->InParty) {
-				talker->SetStance(IE_ANI_READY);
+			if (!talker->Immobile() && !(talker->GetStat(IE_STATE_ID) & STATE_SLEEP) && !(talker->AppearanceFlags&APP_NOTURN)) {
+				talker->SetOrientation(GetOrient( tar->Pos, scr->Pos), true);
+				if (talker->InParty) {
+					talker->SetStance(IE_ANI_READY);
+				}
 			}
 		}
 		if (tar->Type==ST_ACTOR) {
 			// might not be equal to target anymore due to swapping
 			Actor *talkee = (Actor *) tar;
-			talkee->SetOrientation(GetOrient( scr->Pos, tar->Pos), true);
-			if (talkee->InParty) {
-				talkee->SetStance(IE_ANI_READY);
+			if (!talkee->Immobile() && !(talkee->GetStat(IE_STATE_ID) & STATE_SLEEP) && !(talkee->AppearanceFlags&APP_NOTURN)) {
+				talkee->SetOrientation(GetOrient( scr->Pos, tar->Pos), true);
+				if (talkee->InParty) {
+					talkee->SetStance(IE_ANI_READY);
+				}
 			}
 		}
 	}
 
-	bool ret;
-
-	if (Dialog[0]) {
-		//increasing NumTimesTalkedTo or NumTimesInteracted
-		if (Flags & BD_TALKCOUNT) {
-			gc->SetDialogueFlags(DF_TALKCOUNT, BM_OR);
-		} else if ((Flags & BD_LOCMASK) == BD_INTERACT) {
-			gc->SetDialogueFlags(DF_INTERACT, BM_OR);
-		}
-
-		core->GetDictionary()->SetAt("DialogChoose",(ieDword) -1);
-		ret = gc->dialoghandler->InitDialog( scr, tar, Dialog);
+	//increasing NumTimesTalkedTo or NumTimesInteracted
+	if (Flags & BD_TALKCOUNT) {
+		gc->SetDialogueFlags(DF_TALKCOUNT, OP_OR);
+	} else if ((Flags & BD_LOCMASK) == BD_INTERACT) {
+		gc->SetDialogueFlags(DF_INTERACT, OP_OR);
 	}
-	else {
-		ret = false;
+
+	core->GetDictionary()->SetAt("DialogChoose",(ieDword) -1);
+	if (!gc->dialoghandler->InitDialog(scr, tar, Dialog)) {
+		if (!(Flags & BD_NOEMPTY)) {
+			displaymsg->DisplayConstantStringName(STR_NOTHINGTOSAY, DMC_RED, tar);
+		}
 	}
 
 	Sender->ReleaseCurrentAction();
-
-	if (!ret) {
-		if (Flags & BD_NOEMPTY) {
-			return;
-		}
-		displaymsg->DisplayConstantStringName(STR_NOTHINGTOSAY, DMC_RED, tar);
-		return;
-	}
 }
 
 static EffectRef fx_movetoarea_ref = { "MoveToArea", -1 };
@@ -1187,6 +1180,7 @@ void MoveBetweenAreasCore(Actor* actor, const char *area, const Point &position,
 	Map* map1 = actor->GetCurrentArea();
 	Map* map2;
 	Game* game = core->GetGame();
+	bool newSong = false;
 	if (area[0] && (!map1 || stricmp(area, map1->GetScriptName()))) { //do we need to switch area?
 		//we have to change the pathfinder
 		//to the target area if adjust==true
@@ -1195,6 +1189,7 @@ void MoveBetweenAreasCore(Actor* actor, const char *area, const Point &position,
 			map1->RemoveActor( actor );
 		}
 		map2->AddActor( actor, true );
+		newSong = true;
 
 		// update the worldmap if needed
 		if (actor->InParty) {
@@ -1204,7 +1199,7 @@ void MoveBetweenAreasCore(Actor* actor, const char *area, const Point &position,
 			if (entry) {
 				// make sure the area is marked as revealed and visited
 				if (!(entry->GetAreaStatus() & WMP_ENTRY_VISITED)) {
-					entry->SetAreaStatus(WMP_ENTRY_VISIBLE|WMP_ENTRY_VISITED, BM_OR);
+					entry->SetAreaStatus(WMP_ENTRY_VISIBLE|WMP_ENTRY_VISITED, OP_OR);
 				}
 			}
 		}
@@ -1216,8 +1211,10 @@ void MoveBetweenAreasCore(Actor* actor, const char *area, const Point &position,
 	// should this perhaps be a 'selected' check or similar instead?
 	if (actor->InParty) {
 		GameControl *gc=core->GetGameControl();
-		gc->SetScreenFlags(SF_CENTERONACTOR,BM_OR);
-		game->ChangeSong(false, true);
+		gc->SetScreenFlags(SF_CENTERONACTOR,OP_OR);
+		if (newSong) {
+			game->ChangeSong(false, true);
+		}
 	}
 }
 
@@ -1253,6 +1250,9 @@ void MoveToObjectCore(Scriptable *Sender, Action *parameters, ieDword flags, boo
 	}
 	//hopefully this hack will prevent lockups
 	if (!actor->InMove()) {
+		if (flags&IF_NOINT) {
+			actor->Interrupt();
+		}
 		Sender->ReleaseCurrentAction();
 		return;
 	}
@@ -1265,6 +1265,9 @@ void MoveToObjectCore(Scriptable *Sender, Action *parameters, ieDword flags, boo
 		}
 		actor->AddActionInFront(newaction);
 		actor->SetWait(1);
+	} else {
+		delete newaction;
+		actor->Interrupt();
 	}
 
 	Sender->ReleaseCurrentAction();
@@ -1345,6 +1348,7 @@ void AttackCore(Scriptable *Sender, Scriptable *target, int flags)
 	if (!header || !actor->WeaponIsUsable(leftorright, header)) {
 		actor->StopAttack();
 		Sender->ReleaseCurrentAction();
+		assert(tar);
 		actor->AddTrigger(TriggerEntry(trigger_unusable, tar->GetGlobalID()));
 		Log(WARNING, "AttackCore", "Weapon unusable: %s!", actor->GetName(1));
 		return;
@@ -1772,14 +1776,15 @@ int MoveNearerTo(Scriptable *Sender, const Point &p, int distance, int dont_rele
 		return 0;
 	}
 
-	//chasing is unbreakable
-	//TODO: is this true?
-	Sender->CurrentActionInterruptable = false;
+	// chasing is not unbreakable
+	// would prevent smart ai from dropping a target that's running away
+	//Sender->CurrentActionInterruptable = false;
 
 	Actor *actor = (Actor *)Sender;
 
 	if (!actor->InMove() || actor->Destination != p) {
-		actor->WalkTo(p, 0, distance);
+		bool always_run = core->GetGameControl()->ShouldRun(actor);
+		actor->WalkTo(p, IF_RUNNING * always_run, distance);
 	}
 
 	if (!actor->InMove()) {
@@ -1966,7 +1971,9 @@ Trigger *GenerateTriggerCore(const char *src, const char *str, int trIndex, int 
 				else {
 					i=0;
 				}
-				while (*src != '"' && *src != '#') {
+				// some iwd2 dialogs use # instead of " for delimiting parameters (11phaen)
+				// BUT at the same time, some bg2 mod prefixes use it too (eg. Tashia)
+				while (*src != '"' && (*src != '#' || (*(src-1) != '(' && *(src-1) != ','))) {
 					if (*src == 0) {
 						delete newTrigger;
 						return NULL;
@@ -2002,7 +2009,7 @@ Trigger *GenerateTriggerCore(const char *src, const char *str, int trIndex, int 
 					}
 					//reading the context string
 					i=0;
-					while (*src != '"' && *src != '#') {
+					while (*src != '"' && (*src != '#' || (*(src-1) != '(' && *(src-1) != ','))) {
 						if (*src == 0) {
 							delete newTrigger;
 							return NULL;
@@ -2432,7 +2439,7 @@ unsigned int GetSpellDistance(const ieResRef spellres, Scriptable *Sender)
 	if (dist>0xff000000) {
 		return dist;
 	}
-	return dist*9; //FIXME: empirical constant to convert from points to (feet)
+	return dist * VOODOO_SPL_RANGE_F;
 }
 
 /* returns an item's casting distance, it depends on the used header, and targeting mode too
@@ -2630,6 +2637,14 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 {
 	ieResRef spellres;
 	int level = 0;
+	static bool third = core->HasFeature(GF_3ED_RULES);
+	Scriptable *pretarget = NULL;
+
+	// handle iwd2 marked spell casting (MARKED_SPELL is 0)
+	if (third && parameters->int0Parameter == 0) {
+		parameters->int0Parameter = Sender->LastMarkedSpell;
+		pretarget = Sender->GetCurrentArea()->GetActorByGlobalID(Sender->LastMarked);
+	}
 
 	//resolve spellname
 	if (!ResolveSpellName( spellres, parameters) ) {
@@ -2645,10 +2660,6 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 	}
 	if (!Sender->CurrentActionTicks) {
 		parameters->int2Parameter = 1;
-	}
-
-	if ((flags&SC_AURA_CHECK) && parameters->int2Parameter && Sender->AuraPolluted()) {
-		return;
 	}
 
 	// use the passed level instead of the caster's casting level
@@ -2673,7 +2684,9 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 	}
 
 	Scriptable* tar = GetStoredActorFromObject( Sender, parameters->objects[1], seeflag );
-	if (!tar) {
+	if (pretarget) {
+		tar = pretarget;
+	} else if (!tar) {
 		Sender->ReleaseCurrentAction();
 		if (act) {
 			act->SetStance(IE_ANI_READY);
@@ -2684,9 +2697,18 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 	if (act) {
 		//move near to target
 		if ((flags&SC_RANGE_CHECK) && dist != 0xffffffff) {
-			if (PersonalDistance(tar, Sender) > dist || !Sender->GetCurrentArea()->IsVisibleLOS(Sender->Pos, tar->Pos)) {
+			if (PersonalDistance(tar, Sender) > dist) {
 				MoveNearerTo(Sender, tar, dist);
 				return;
+			}
+			if (!Sender->GetCurrentArea()->IsVisibleLOS(Sender->Pos, tar->Pos)) {
+				Spell *spl = gamedata->GetSpell(Sender->SpellResRef, true);
+				if (!(spl->Flags&SF_NO_LOS)) {
+					gamedata->FreeSpell(spl, Sender->SpellResRef, false);
+					MoveNearerTo(Sender, tar, dist);
+					return;
+				}
+				gamedata->FreeSpell(spl, Sender->SpellResRef, false);
 			}
 		}
 
@@ -2697,6 +2719,10 @@ void SpellCore(Scriptable *Sender, Action *parameters, int flags)
 
 		//stop doing anything else
 		act->SetModal(MS_NONE);
+	}
+
+	if ((flags&SC_AURA_CHECK) && parameters->int2Parameter && Sender->AuraPolluted()) {
+		return;
 	}
 
 	int duration;
@@ -2759,10 +2785,6 @@ void SpellPointCore(Scriptable *Sender, Action *parameters, int flags)
 		parameters->int2Parameter = 1;
 	}
 
-	if ((flags&SC_AURA_CHECK) && parameters->int2Parameter && Sender->AuraPolluted()) {
-		return;
-	}
-
 	// use the passed level instead of the caster's casting level
 	if (flags&SC_SETLEVEL) {
 		if (parameters->string0Parameter[0]) {
@@ -2777,15 +2799,30 @@ void SpellPointCore(Scriptable *Sender, Action *parameters, int flags)
 
 		Actor *act = (Actor *) Sender;
 		//move near to target
-		if ((flags&SC_RANGE_CHECK) && (PersonalDistance(parameters->pointParameter, Sender) > dist || !Sender->GetCurrentArea()->IsVisibleLOS(Sender->Pos, parameters->pointParameter))) {
-			MoveNearerTo(Sender,parameters->pointParameter, dist, 0);
-			return;
+		if (flags&SC_RANGE_CHECK) {
+			if (PersonalDistance(parameters->pointParameter, Sender) > dist) {
+				MoveNearerTo(Sender, parameters->pointParameter, dist, 0);
+				return;
+			}
+			if (!Sender->GetCurrentArea()->IsVisibleLOS(Sender->Pos, parameters->pointParameter)) {
+				Spell *spl = gamedata->GetSpell(Sender->SpellResRef, true);
+				if (!(spl->Flags&SF_NO_LOS)) {
+					gamedata->FreeSpell(spl, Sender->SpellResRef, false);
+					MoveNearerTo(Sender, parameters->pointParameter, dist, 0);
+					return;
+				}
+				gamedata->FreeSpell(spl, Sender->SpellResRef, false);
+			}
 		}
 
 		//face target
 		act->SetOrientation( GetOrient( parameters->pointParameter, act->Pos ), false );
 		//stop doing anything else
 		act->SetModal(MS_NONE);
+	}
+
+	if ((flags&SC_AURA_CHECK) && parameters->int2Parameter && Sender->AuraPolluted()) {
+		return;
 	}
 
 	int duration;

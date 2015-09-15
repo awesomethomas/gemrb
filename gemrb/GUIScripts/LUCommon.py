@@ -23,6 +23,7 @@ import GemRB
 import GameCheck
 import GUICommon
 import CommonTables
+from GUIDefines import *
 from ie_stats import *
 from ie_feats import *
 
@@ -52,6 +53,12 @@ def CanLevelUp(actor):
 	if GemRB.GetPlayerStat(actor, IE_LEVELDRAIN)>0:
 		return 0
 
+	if GameCheck.IsIWD2():
+		import GUIREC
+		levelsum = GemRB.GetPlayerStat (actor, IE_CLASSLEVELSUM)
+		next = GUIREC.GetNextLevelExp(levelsum, GUIREC.GetECL(actor))
+		return next <= xp
+
 	if Multi[0] > 1: # multiclassed
 		xp = xp/Multi[0] # divide the xp evenly between the classes
 		for i in range (Multi[0]):
@@ -73,15 +80,24 @@ def CanLevelUp(actor):
 	tmpNext = int(GetNextLevelExp (Levels[0], Class) )
 	return (tmpNext != 0 and tmpNext <= xp)
 
+# expects a list of character levels of all classes
+# returns sparse list of class ids (of same length)
+def GetAllClasses (Levels):
+	Class = [0]*len(Levels)
+	for c in range(len(Levels)):
+		if Levels[c] > 0:
+			# level stats are implicitly keyed by class id
+			Class[c] = c + 1
+	return Class
+
 # internal shared function for the various Setup* stat updaters
 def _SetupLevels (pc, Level, offset=0, noclass=0):
 	#storing levels as an array makes them easier to deal with
 	if not Level:
 		Levels = [IE_LEVEL, IE_LEVEL2, IE_LEVEL3]
 		if GameCheck.IsIWD2():
-			Levels = [IE_LEVELBARBARIAN, IE_LEVELBARD, IE_LEVELCLERIC, IE_LEVELDRUID, \
-				IE_LEVEL, IE_LEVELMONK, IE_LEVELPALADIN, IE_LEVELRANGER, IE_LEVEL3, \
-				IE_LEVELSORCERER, IE_LEVEL2]
+			import IDLUCommon
+			Levels = IDLUCommon.Levels
 		Levels = [ GemRB.GetPlayerStat (pc, l)+offset for l in Levels ]
 	else:
 		Levels = []
@@ -105,6 +121,8 @@ def _SetupLevels (pc, Level, offset=0, noclass=0):
 		#assume Level is correct if passed
 		if GUICommon.IsDualSwap(pc) and not Level:
 			Levels = [Levels[1], Levels[0], Levels[2]]
+	elif GameCheck.IsIWD2():
+		Class = GetAllClasses (Levels)
 
 	return Levels, NumClasses, Class
 
@@ -123,7 +141,7 @@ def SetupSavingThrows (pc, Level=None):
 
 	#see if we can add racial bonuses to saves
 	Race = CommonTables.Races.GetRowName (CommonTables.Races.FindValue (3, Race) )
-	RaceSaveTableName = CommonTables.Races.GetValue (Race, "SAVE", 0)
+	RaceSaveTableName = CommonTables.Races.GetValue (Race, "SAVE", GTV_STR)
 	RaceSaveTable = None
 	if RaceSaveTableName != "-1" and RaceSaveTableName != "*":
 		Con = GemRB.GetPlayerStat (pc, IE_CON, 1)-1
@@ -136,10 +154,10 @@ def SetupSavingThrows (pc, Level=None):
 	ClassBonus = 0
 	for i in range (NumClasses):
 		RowName = GUICommon.GetClassRowName (Class[i], "class")
-		SaveName = CommonTables.Classes.GetValue (RowName, "SAVE", 0)
+		SaveName = CommonTables.Classes.GetValue (RowName, "SAVE", GTV_STR)
 		SaveTables.append (GemRB.LoadTable (SaveName) )
 		#use numeric value
-		ClassBonus += CommonTables.ClassSkills.GetValue (RowName, "SAVEBONUS", 1)
+		ClassBonus += CommonTables.ClassSkills.GetValue (RowName, "SAVEBONUS", GTV_INT)
 
 	if not len (SaveTables):
 		return
@@ -242,7 +260,7 @@ def SetupLore (pc, LevelDiff=None):
 			ClassName = "CLERIC"
 
 		#add the lore from this class to the total lore
-		TmpLore = LevelDiffs[i] * LoreTable.GetValue (ClassName, "RATE", 1)
+		TmpLore = LevelDiffs[i] * LoreTable.GetValue (ClassName, "RATE", GTV_INT)
 		if TmpLore:
 			CurrentLore += TmpLore
 
@@ -281,11 +299,7 @@ def SetupHP (pc, Level=None, LevelDiff=None):
 		if GUICommon.IsDualSwap(pc) and not Level and not LevelDiff:
 			LevelDiffs = [LevelDiffs[1], LevelDiffs[0], LevelDiffs[2]]
 	elif GameCheck.IsIWD2():
-		Class = [0]*len(Levels)
-		for c in range(len(Levels)):
-			if Levels[c] > 0:
-				# level stats are implicitly keyed by class id
-				Class[c] = c + 1
+		Class = GetAllClasses (Levels)
 	if NumClasses>len(Levels):
 		return
 
@@ -293,7 +307,7 @@ def SetupHP (pc, Level=None, LevelDiff=None):
 	Kit = GUICommon.GetKitIndex (pc)
 	ClassName = None
 	if Kit and not Dual[0] and Multi[0]<2:
-		KitName = CommonTables.KitList.GetValue (Kit, 0, 0)
+		KitName = CommonTables.KitList.GetValue (Kit, 0, GTV_STR)
 		if CommonTables.Classes.GetRowIndex (KitName) >= 0:
 			ClassName = KitName
 
@@ -438,7 +452,7 @@ def ApplyFeats(MyChar):
 	SPLFocusTable = GemRB.LoadTable ("splfocus")
 	for i in range(SPLFocusTable.GetRowCount()):
 		Row = SPLFocusTable.GetRowName(i)
-		Stat = SPLFocusTable.GetValue(Row, "STAT", 2)
+		Stat = SPLFocusTable.GetValue(Row, "STAT", GTV_STAT)
 		if Stat:
 			Column = GemRB.GetPlayerStat(MyChar, Stat)
 			if Column:
@@ -454,25 +468,4 @@ def SetSpell(pc, SpellName, Feat):
 	else:
 		GemRB.RemoveSpell(pc, SpellName)
 	return
-
-def AddPlayerStat(MyChar, stat, value):
-        value += GemRB.GetPlayerStat (MyChar, stat, 0)
-	#print "Set: ", stat," to ", value
-        GemRB.SetPlayerStat (MyChar, stat, value)
-        return
-
-def SetClassResistances(MyChar, clsstitle):
-        resistances = GemRB.LoadTable ("clssrsmd")
-        AddPlayerStat (MyChar, IE_RESISTFIRE, resistances.GetValue ( clsstitle, "FIRE") )
-        AddPlayerStat (MyChar, IE_RESISTCOLD, resistances.GetValue ( clsstitle, "COLD") )
-        AddPlayerStat (MyChar, IE_RESISTELECTRICITY, resistances.GetValue ( clsstitle, "ELEC") )
-        AddPlayerStat (MyChar, IE_RESISTACID, resistances.GetValue ( clsstitle, "ACID") )
-        AddPlayerStat (MyChar, IE_RESISTMAGIC, resistances.GetValue ( clsstitle, "SPELL") )
-        AddPlayerStat (MyChar, IE_RESISTMAGICFIRE, resistances.GetValue ( clsstitle, "MAGIC_FIRE") )
-        AddPlayerStat (MyChar, IE_RESISTMAGICCOLD, resistances.GetValue ( clsstitle, "MAGIC_COLD") )
-        AddPlayerStat (MyChar, IE_RESISTSLASHING, resistances.GetValue ( clsstitle, "SLASHING") )
-        AddPlayerStat (MyChar, IE_RESISTCRUSHING, resistances.GetValue ( clsstitle, "BLUDGEONING") )
-        AddPlayerStat (MyChar, IE_RESISTPIERCING, resistances.GetValue ( clsstitle, "PIERCING") )
-        AddPlayerStat (MyChar, IE_RESISTMISSILE, resistances.GetValue ( clsstitle, "MISSILE") )
-        return
 

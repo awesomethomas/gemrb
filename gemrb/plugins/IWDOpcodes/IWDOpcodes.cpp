@@ -39,7 +39,6 @@ using namespace GemRB;
 
 static const ieResRef SevenEyes[7]={"spin126","spin127","spin128","spin129","spin130","spin131","spin132"};
 
-static bool enhanced_effects = false;
 //a scripting object for enemy (used for enemy in line of sight check)
 static Trigger *Enemy = NULL;
 
@@ -428,7 +427,7 @@ static void Cleanup()
 static void RegisterIWDOpcodes()
 {
 	core->RegisterOpcodes( sizeof( effectnames ) / sizeof( EffectDesc ) - 1, effectnames );
-	enhanced_effects=!!core->HasFeature(GF_ENHANCED_EFFECTS);
+
 	//create enemy trigger object for enemy in line of sight check
 	if (!Enemy) {
 		Enemy = new Trigger;
@@ -553,7 +552,7 @@ static int check_iwd_targeting(Scriptable* Owner, Actor* target, ieDword value, 
 	case STI_CIRCLESIZE:
 		return DiffCore((ieDword) target->GetAnims()->GetCircleSize(), val, rel);
 	case STI_EVASION:
-		if (enhanced_effects) {
+		if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 			// NOTE: no idea if this is used in iwd2 too
 			// FIXME: check for evasion itself
 			if (target->GetThiefLevel() < 2 && target->GetMonkLevel() < 1) {
@@ -840,7 +839,7 @@ int fx_chill_touch_panic (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	} else {
 		STATE_SET(state);
 	}
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_PANIC);
 	}
 	return FX_PERMANENT;
@@ -1207,7 +1206,7 @@ int fx_blinding_orb (Scriptable* Owner, Actor* target, Effect* fx)
 	}
 	//check saving throw
 	bool st;
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		st = target->GetSavingThrow(2, 0, fx->SpellLevel, fx->SavingThrowBonus); // fortitude
 	} else {
 		st = target->GetSavingThrow(0,0); //spell
@@ -1799,20 +1798,23 @@ int fx_soul_eater (Scriptable* Owner, Actor* target, Effect* fx)
 		Point p(fx->PosX, fx->PosY);
 		Effect *newfx = EffectQueue::CreateUnsummonEffect(fx);
 		core->SummonCreature(monster, areahit, Owner, target, p, EAM_SOURCEALLY, fx->Parameter1, newfx);
+		delete newfx;
 
 		// for each kill the caster receives a +1 bonus to Str, Dex and Con for 1 turn
 		if (Owner->Type == ST_ACTOR) {
 			newfx = EffectQueue::CreateEffect(fx_str_ref, 1, MOD_ADDITIVE, FX_DURATION_INSTANT_LIMITED);
 			newfx->Duration = core->Time.turn_sec;
 			core->ApplyEffect(newfx, (Actor *)Owner, Owner);
+			delete newfx;
 			newfx = EffectQueue::CreateEffect(fx_dex_ref, 1, MOD_ADDITIVE, FX_DURATION_INSTANT_LIMITED);
 			newfx->Duration = core->Time.turn_sec;
 			core->ApplyEffect(newfx, (Actor *)Owner, Owner);
+			delete newfx;
 			newfx = EffectQueue::CreateEffect(fx_con_ref, 1, MOD_ADDITIVE, FX_DURATION_INSTANT_LIMITED);
 			newfx->Duration = core->Time.turn_sec;
 			core->ApplyEffect(newfx, (Actor *)Owner, Owner);
+			delete newfx;
 		}
-		delete newfx;
 	}
 	return FX_NOT_APPLIED;
 }
@@ -1877,7 +1879,7 @@ int fx_shroud_of_flame2 (Scriptable* Owner, Actor* target, Effect* fx)
 	if (target->SetSpellState( SS_FLAMESHROUD)) return FX_APPLIED;
 	EXTSTATE_SET(EXTSTATE_SHROUD); //just for compatibility
 
-	if(enhanced_effects) {
+	if(core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->SetColorMod(0xff, RGBModifier::ADD, 1, 0xa0, 0, 0);
 	}
 
@@ -2114,13 +2116,13 @@ int fx_mace_of_disruption (Scriptable* Owner, Actor* target, Effect* fx)
 	newfx->Target=FX_TARGET_PRESET;
 	newfx->Power=fx->Power;
 	core->ApplyEffect(newfx, target, Owner);
+	delete newfx;
 
 	newfx = EffectQueue::CreateEffect(fx_death_ref, 0,
 			8, FX_DURATION_INSTANT_PERMANENT);
 	newfx->Target=FX_TARGET_PRESET;
 	newfx->Power=fx->Power;
 	core->ApplyEffect(newfx, target, Owner);
-
 	delete newfx;
 
 	return FX_NOT_APPLIED;
@@ -2205,7 +2207,7 @@ int fx_resist_spell_and_message (Scriptable* Owner, Actor* target, Effect *fx)
 	}
 
 	if (spellname>=0) {
-		char *tmpstr = core->GetString(spellname, 0);
+		char *tmpstr = core->GetCString(spellname, 0);
 		core->GetTokenDictionary()->SetAtCopy("RESOURCE", tmpstr);
 		core->FreeString(tmpstr);
 		displaymsg->DisplayConstantStringName(STR_RES_RESISTED, DMC_WHITE, target);
@@ -2391,19 +2393,19 @@ int fx_alter_animation (Scriptable* Owner, Actor* /*target*/, Effect* fx)
 			//4->0, 5->1, 6->2, 7->3
 			ieWord value = fx->Parameter1>>16;
 			switch(fx->Parameter1&0xffff) {
-				case BM_SET:
+				case OP_SET:
 					an->sequence=value;
 					break;
-				case BM_AND:
+				case OP_AND:
 					an->sequence&=value;
 					break;
-				case BM_OR:
+				case OP_OR:
 					an->sequence|=value;
 					break;
-				case BM_NAND:
+				case OP_NAND:
 					an->sequence&=~value;
 					break;
-				case BM_XOR:
+				case OP_XOR:
 					an->sequence^=value;
 					break;
 			}
@@ -2540,7 +2542,7 @@ static int fx_armor_of_faith (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	STAT_ADD(IE_RESISTCRUSHING,fx->Parameter1 );
 	STAT_ADD(IE_RESISTPIERCING,fx->Parameter1 );
 	STAT_ADD(IE_RESISTMISSILE,fx->Parameter1 );
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_FAITHARMOR);
 	}
 	return FX_APPLIED;
@@ -2587,9 +2589,11 @@ int fx_fireshield (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if (fx->Parameter2) {
 		if (target->SetSpellState( SS_ICESHIELD)) return FX_APPLIED;
 		target->AddPortraitIcon(PI_ICESHIELD);
+		target->SetOverlay(OV_ICESHIELD1);
 	} else {
 		if (target->SetSpellState( SS_FIRESHIELD)) return FX_APPLIED;
 		target->AddPortraitIcon(PI_FIRESHIELD);
+		target->SetOverlay(OV_FIRESHIELD1);
 	}
 	memcpy(target->applyWhenBeingHit,fx->Resource,sizeof(ieResRef));
 	return FX_APPLIED;
@@ -2611,7 +2615,7 @@ int fx_holy_power (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if(0) print("fx_holy_power(%2d)", fx->Opcode);
 	if (target->SetSpellState( SS_HOLYPOWER)) return FX_APPLIED;
 
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_HOLYPOWER);
 		target->SetColorMod(0xff, RGBModifier::ADD, 20, 0x80, 0x80, 0x80);
 	}
@@ -2633,7 +2637,7 @@ int fx_righteous_wrath (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		if (target->SetSpellState( SS_RIGHTEOUS)) return FX_APPLIED;
 		//
 	}
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_RIGHTEOUS);
 		target->SetColorMod(0xff, RGBModifier::ADD, 30, 0xd7, 0xb6, 0 );
 	}
@@ -2757,7 +2761,7 @@ int fx_resilient_sphere (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if(0) print("fx_resilient_sphere(%2d)", fx->Opcode);
 	target->SetSpellState(SS_HELD|SS_RESILIENT);
 	STATE_SET(STATE_HELPLESS);
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_RESILIENT);
 		target->SetOverlay(OV_RESILIENT);
 	}
@@ -2782,7 +2786,7 @@ int fx_barkskin (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	}
 	target->AC.HandleFxBonus(bonus, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_BARKSKIN);
 		target->SetGradient(2);
 	}
@@ -2894,7 +2898,7 @@ int fx_free_action_iwd2 (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	// 0x6d State:Hold3             ok
 	// 0x28 State:Slowed            ok
 	// 0xb0 MovementRateModifier2   ok
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_FREEACTION);
 		target->SetColorMod(0xff, RGBModifier::ADD, 30, 0x80, 0x60, 0x60);
 	}
@@ -2911,7 +2915,7 @@ int fx_unconsciousness (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		target->SetSpellState(SS_NOAWAKE);
 	}
 	//
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_UNCONSCIOUS);
 	}
 	return FX_APPLIED;
@@ -2935,7 +2939,7 @@ int fx_entropy_shield (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	while(i) {
 		target->AddProjectileImmunity(EntropyProjectileList[i--]);
 	}
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_ENTROPY);
 		//entropy shield overlay
 		target->SetOverlay(OV_ENTROPY);
@@ -2953,7 +2957,7 @@ int fx_storm_shell (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	STAT_ADD(IE_RESISTCOLD, 15);
 	STAT_ADD(IE_RESISTELECTRICITY, 15);
 
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->SetOverlay(OV_STORMSHELL);
 	}
 	return FX_APPLIED;
@@ -2973,7 +2977,7 @@ int fx_protection_from_elements (Scriptable* /*Owner*/, Actor* target, Effect* f
 	STAT_ADD(IE_RESISTMAGICFIRE, 15);
 	STAT_ADD(IE_RESISTMAGICCOLD, 15);
 
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->SetColorMod(0xff, RGBModifier::ADD, 0x4f, 0, 0, 0xc0);
 	}
 	return FX_APPLIED;
@@ -3023,7 +3027,7 @@ int fx_aegis (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		STAT_SET(IE_STONESKINS, fx->Parameter1);
 	}
 
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_AEGIS);
 		target->SetColorMod(0xff, RGBModifier::ADD, 30, 0x80, 0x60, 0x60);
 		target->SetGradient(14);
@@ -3041,7 +3045,7 @@ int fx_executioner_eyes (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	STAT_ADD(IE_CRITICALHITBONUS, 4);
 	target->ToHit.HandleFxBonus(4, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_EXECUTIONER);
 		target->SetGradient(8);
 	}
@@ -3134,7 +3138,7 @@ int fx_tortoise_shell (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	}
 
 	if (target->SetSpellState( SS_TORTOISE)) return FX_NOT_APPLIED;
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_TORTOISE);
 		target->SetOverlay(OV_TORTOISE);
 	}
@@ -3168,12 +3172,15 @@ int fx_blink (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	fx->Parameter4=Trans;
 	STAT_SET( IE_TRANSLUCENT, Trans);
 	STAT_ADD(IE_SPELLFAILUREMAGE, 20);
+	STAT_ADD(IE_ETHEREALNESS, 50); // how likely are people to miss us?
 
 	if(fx->Parameter2) {
 		target->AddPortraitIcon(PI_EMPTYBODY);
 		return FX_APPLIED;
 	}
 
+	// how likely are we to miss others? Combined in the same stat
+	STAT_ADD(IE_ETHEREALNESS, 20<<8);
 	target->AddPortraitIcon(PI_BLINK);
 	return FX_APPLIED;
 }
@@ -3376,7 +3383,7 @@ int fx_tenser_transformation (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	STAT_ADD(IE_STR, fx->Parameter4);
 	STAT_ADD(IE_CON, fx->Parameter5);
 
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_TENSER);
 		target->SetGradient(0x3e);
 	}
@@ -3437,7 +3444,7 @@ int fx_alicorn_lance (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	////target->AddPortraitIcon(PI_ALICORN); //no portrait icon
 	target->AC.HandleFxBonus(-2, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 	//color glow
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->SetColorMod(0xff, RGBModifier::ADD, 1, 0xb9, 0xb9, 0xb9);
 	}
 	return FX_APPLIED;
@@ -3457,7 +3464,7 @@ static Actor *GetRandomEnemySeen(Map *map, Actor *origin)
 	i -= pos;
 	while(i--) {
 		Actor *ac = map->GetActor(i,true);
-		if (!CanSee(origin, ac, true, GA_NO_DEAD|GA_NO_HIDDEN)) continue;
+		if (!CanSee(origin, ac, true, GA_NO_DEAD|GA_NO_HIDDEN|GA_NO_UNSCHEDULED)) continue;
 		if (type) { //origin is PC
 			if (ac->GetStat(IE_EA) >= EA_EVILCUTOFF) {
 				return ac;
@@ -3473,7 +3480,7 @@ static Actor *GetRandomEnemySeen(Map *map, Actor *origin)
 	i=map->GetActorCount(true);
 	while(i--!=pos) {
 		Actor *ac = map->GetActor(i,true);
-		if (!CanSee(origin, ac, true, GA_NO_DEAD|GA_NO_HIDDEN)) continue;
+		if (!CanSee(origin, ac, true, GA_NO_DEAD|GA_NO_HIDDEN|GA_NO_UNSCHEDULED)) continue;
 		if (type) { //origin is PC
 			if (ac->GetStat(IE_EA) >= EA_EVILCUTOFF) {
 				return ac;
@@ -3552,7 +3559,7 @@ int fx_globe_invulnerability (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	if (target->SetSpellState( state)) return FX_APPLIED;
 
 	STAT_BIT_OR(IE_MINORGLOBE, value);
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(icon);
 		target->SetOverlay(overlay);
 	}
@@ -3608,7 +3615,7 @@ int fx_bane (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 	//do this once
 	if (fx->FirstApply)
 		target->fxqueue.RemoveAllEffects(fx_bless_ref);
-	if (enhanced_effects) {
+	if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
 		target->AddPortraitIcon(PI_BANE);
 		target->SetColorMod(0xff, RGBModifier::ADD, 20, 0, 0, 0x80);
 	}

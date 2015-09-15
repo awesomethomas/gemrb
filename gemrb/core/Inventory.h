@@ -135,6 +135,7 @@ struct ItemExtHeader {
 	ieByte Location;
 	ieByte unknown1;
 	ieResRef UseIcon;
+	ieStrRef Tooltip;
 	ieByte Target;
 	ieByte TargetNumber;
 	ieWord Range;
@@ -277,6 +278,7 @@ public:
 	bool SetEquippedSlot(ieWordSigned slotcode, ieWord header);
 	int GetEquipped() const;
 	int GetEquippedHeader() const;
+	ITMExtHeader *GetEquippedExtHeader(int header=0) const;
 	void SetEquipped(ieWordSigned slot, ieWord header);
 	//right hand
 	int GetEquippedSlot() const;
@@ -333,8 +335,10 @@ public:
 	unsigned int FindStealableItem();
 	/** checks if any equipped item provides critical hit aversion */
 	bool ProvidesCriticalAversion();
-	/** tries to merge the passed item with the on in the passed slot */
+	/** tries to merge the passed item with the one in the passed slot */
 	int MergeItems(int slot, CREItem *item);
+	bool FistsEquipped() const;
+	bool MagicSlotEquipped() const;
 	//setting important constants
 	static void Init();
 	static void SetArmorSlot(int arg);

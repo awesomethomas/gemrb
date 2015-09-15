@@ -23,6 +23,7 @@
 #include "GameScript/GSUtils.h"
 #include "GameScript/Matching.h"
 
+#include "voodooconst.h"
 #include "win32def.h"
 
 #include "AmbientMgr.h"
@@ -216,7 +217,7 @@ int GameScript::IsTeamBitOn(Scriptable* Sender, Trigger* parameters)
 
 int GameScript::NearbyDialog(Scriptable* Sender, Trigger* parameters)
 {
-	Actor *target = Sender->GetCurrentArea()->GetActorByDialog(parameters->string0Parameter);
+	Scriptable *target = Sender->GetCurrentArea()->GetActorByDialog(parameters->string0Parameter);
 	if ( !target ) {
 		return 0;
 	}
@@ -242,15 +243,14 @@ int GameScript::IsValidForPartyDialog(Scriptable* Sender, Trigger* parameters)
 	//this might disturb some modders, but this is the correct behaviour
 	//for example the aaquatah dialog in irenicus dungeon depends on it
 	GameControl *gc = core->GetGameControl();
-	Actor *pc = (Actor *) scr;
-	if (pc->GetGlobalID() == gc->dialoghandler->targetID || pc->GetGlobalID()==gc->dialoghandler->speakerID) {
+	if (gc->dialoghandler->InDialog(scr)) {
 		return 0;
 	}
 
 	//don't accept parties with the no interrupt flag
 	//this fixes bug #2573808 on gamescript level
 	//(still someone has to turn the no interrupt flag off)
-	if(!pc->GetDialog(GD_CHECK)) {
+	if(!target->GetDialog(GD_CHECK)) {
 		return 0;
 	}
 	return CanSee( Sender, target, false, GA_NO_DEAD|GA_NO_UNSCHEDULED );
@@ -319,7 +319,7 @@ int GameScript::IsGabber(Scriptable* Sender, Trigger* parameters)
 	if (!scr || scr->Type!=ST_ACTOR) {
 		return 0;
 	}
-	if (scr->GetGlobalID() == core->GetGameControl()->dialoghandler->speakerID)
+	if (core->GetGameControl()->dialoghandler->IsSpeaker(Sender))
 		return 1;
 	return 0;
 }
@@ -435,9 +435,6 @@ int GameScript::General(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 	Actor* actor = ( Actor* ) scr;
-	if (actor == NULL) {
-		return 0;
-	}
 	return ID_General(actor, parameters->int0Parameter);
 }
 
@@ -451,9 +448,6 @@ int GameScript::Specifics(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 	Actor* actor = ( Actor* ) scr;
-	if (actor == NULL) {
-		return 0;
-	}
 	return ID_Specific(actor, parameters->int0Parameter);
 }
 
@@ -480,7 +474,7 @@ int GameScript::BitCheckExact(Scriptable* Sender, Trigger* parameters)
 	return 0;
 }
 
-//BM_OR would make sense only if this trigger changes the value of the variable
+//OP_OR would make sense only if this trigger changes the value of the variable
 //should I do that???
 int GameScript::BitGlobal_Trigger(Scriptable* Sender, Trigger* parameters)
 {
@@ -1147,6 +1141,9 @@ int GameScript::HasItemTypeSlot(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 	Item *itm = gamedata->GetItem(slot->ItemResRef);
+	if (!itm) {
+		return 0;
+	}
 	int itemtype = itm->ItemType;
 	gamedata->FreeItem(itm, slot->ItemResRef, 0);
 	if (itemtype==parameters->int1Parameter) {
@@ -1162,7 +1159,9 @@ int GameScript::HasItemEquipped(Scriptable * Sender, Trigger* parameters)
 		return 0;
 	}
 	Actor *actor = (Actor *) scr;
-	if (actor->inventory.HasItem(parameters->string0Parameter, IE_INV_ITEM_EQUIPPED) ) {
+	// HACK: temporarily look at all items, since we now set the bit only for weapons
+	// bg2/ddguard7.baf is the only user with something else - the strohm mask helmet
+	if (actor->inventory.HasItem(parameters->string0Parameter, IE_INV_ITEM_EQUIPPED*0) ) {
 		return 1;
 	}
 	return 0;
@@ -1561,14 +1560,14 @@ int GameScript::NearLocation(Scriptable* Sender, Trigger* parameters)
 	if (parameters->pointParameter.isnull()) {
 		Point p((short) parameters->int0Parameter, (short) parameters->int1Parameter);
 		int distance = PersonalDistance(p, scr);
-		if (distance <= ( parameters->int2Parameter * 10 )) {
+		if (distance <= (parameters->int2Parameter * VOODOO_NEARLOC_F)) {
 			return 1;
 		}
 		return 0;
 	}
 	//personaldistance is needed for modron constructs in PST maze
 	int distance = PersonalDistance(parameters->pointParameter, scr);
-	if (distance <= ( parameters->int0Parameter * 10 )) {
+	if (distance <= (parameters->int0Parameter * VOODOO_NEARLOC_F)) {
 		return 1;
 	}
 	return 0;
@@ -1587,7 +1586,7 @@ int GameScript::NearSavedLocation(Scriptable* Sender, Trigger* parameters)
 	Point p( (short) actor->GetStat(IE_SAVEDXPOS), (short) actor->GetStat(IE_SAVEDYPOS) );
 	// should this be PersonalDistance?
 	int distance = Distance(p, Sender);
-	if (distance <= ( parameters->int0Parameter * 10 )) {
+	if (distance <= (parameters->int0Parameter * VOODOO_NEARLOC_F)) {
 		return 1;
 	}
 	return 0;
@@ -1689,7 +1688,7 @@ int GameScript::IsOverMe(Scriptable* Sender, Trigger* parameters)
 	}
 	Highlightable *trap = (Highlightable *)Sender;
 
-	Targets *tgts = GetAllObjects(Sender->GetCurrentArea(), Sender, parameters->objectParameter, GA_NO_DEAD);
+	Targets *tgts = GetAllObjects(Sender->GetCurrentArea(), Sender, parameters->objectParameter, GA_NO_DEAD|GA_NO_UNSCHEDULED);
 	int ret = 0;
 	if (tgts) {
 		targetlist::iterator m;
@@ -2051,7 +2050,7 @@ int GameScript::CheckSkill(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 	Actor* actor = ( Actor* ) target;
-	int sk = actor->GetSkill( parameters->int1Parameter );
+	int sk = actor->GetSkill(parameters->int1Parameter, true);
 	if (sk<0) return 0;
 	if ( sk == parameters->int0Parameter) {
 		return 1;
@@ -2081,7 +2080,7 @@ int GameScript::CheckSkillGT(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 	Actor* actor = ( Actor* ) tar;
-	int sk = actor->GetSkill( parameters->int1Parameter );
+	int sk = actor->GetSkill(parameters->int1Parameter, true);
 	if (sk<0) return 0;
 	if ( sk > parameters->int0Parameter) {
 		return 1;
@@ -2109,7 +2108,7 @@ int GameScript::CheckSkillLT(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 	Actor* actor = ( Actor* ) tar;
-	int sk = actor->GetSkill( parameters->int1Parameter );
+	int sk = actor->GetSkill(parameters->int1Parameter, true);
 	if (sk<0) return 0;
 	if ( sk < parameters->int0Parameter) {
 		return 1;
@@ -2177,6 +2176,9 @@ int GameScript::IsSpellTargetValid(Scriptable* Sender, Trigger* parameters)
 	Actor *scr = (Actor *) Sender;
 
 	Scriptable* tar = GetActorFromObject( Sender, parameters->objectParameter );
+	if (!tar) {
+		return 0;
+	}
 	Actor *actor = NULL;
 	if (tar->Type == ST_ACTOR) {
 		actor = (Actor *) tar;
@@ -2199,7 +2201,7 @@ int GameScript::IsSpellTargetValid(Scriptable* Sender, Trigger* parameters)
 	} else {
 		range = Distance(scr, actor);
 	}
-	if (!(flags & MSO_IGNORE_INVALID) && actor->InvalidSpellTarget(splnum, scr, range)) {
+	if (!(flags & MSO_IGNORE_INVALID) && actor && actor->InvalidSpellTarget(splnum, scr, range)) {
 		return 0;
 	}
 	return 1;
@@ -2466,10 +2468,7 @@ int GameScript::NotStateCheck(Scriptable* Sender, Trigger* parameters)
 
 int GameScript::RandomNum(Scriptable* /*Sender*/, Trigger* parameters)
 {
-	if (parameters->int0Parameter<0) {
-		return 0;
-	}
-	if (parameters->int1Parameter<0) {
+	if (parameters->int0Parameter <= 0 || parameters->int1Parameter <= 0) {
 		return 0;
 	}
 	return parameters->int1Parameter-1 == RandomNumValue%parameters->int0Parameter;
@@ -2477,10 +2476,7 @@ int GameScript::RandomNum(Scriptable* /*Sender*/, Trigger* parameters)
 
 int GameScript::RandomNumGT(Scriptable* /*Sender*/, Trigger* parameters)
 {
-	if (parameters->int0Parameter<0) {
-		return 0;
-	}
-	if (parameters->int1Parameter<0) {
+	if (parameters->int0Parameter <= 0 || parameters->int1Parameter <= 0) {
 		return 0;
 	}
 	return parameters->int1Parameter-1 < RandomNumValue%parameters->int0Parameter;
@@ -2488,10 +2484,7 @@ int GameScript::RandomNumGT(Scriptable* /*Sender*/, Trigger* parameters)
 
 int GameScript::RandomNumLT(Scriptable* /*Sender*/, Trigger* parameters)
 {
-	if (parameters->int0Parameter<0) {
-		return 0;
-	}
-	if (parameters->int1Parameter<0) {
+	if (parameters->int0Parameter <= 0 || parameters->int1Parameter <= 0) {
 		return 0;
 	}
 	return parameters->int1Parameter-1 > RandomNumValue%parameters->int0Parameter;
@@ -2968,7 +2961,7 @@ int GameScript::OwnsFloaterMessage(Scriptable* Sender, Trigger* parameters)
 	if (!tar) {
 		return 0;
 	}
-	return tar->textDisplaying;
+	return tar->OverheadTextIsDisplaying();
 }
 
 int GameScript::InCutSceneMode(Scriptable* /*Sender*/, Trigger* /*parameters*/)
@@ -3130,7 +3123,7 @@ int GameScript::NullDialog(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 	GameControl *gc = core->GetGameControl();
-	if ( (tar->GetGlobalID() != gc->dialoghandler->targetID) && (tar->GetGlobalID() != gc->dialoghandler->speakerID) ) {
+	if (!gc->dialoghandler->InDialog(tar)) {
 		return 1;
 	}
 	return 0;
@@ -3201,19 +3194,19 @@ int GameScript::AnimState(Scriptable* Sender, Trigger* parameters)
 //this trigger uses hours
 int GameScript::Time(Scriptable* /*Sender*/, Trigger* parameters)
 {
-	return (core->GetGame()->GameTime/AI_UPDATE_TIME)%7200/300 == (ieDword) parameters->int0Parameter;
+	return Schedule(1 << parameters->int0Parameter, core->GetGame()->GameTime);
 }
 
 //this trigger uses hours
 int GameScript::TimeGT(Scriptable* /*Sender*/, Trigger* parameters)
 {
-	return (core->GetGame()->GameTime/AI_UPDATE_TIME)%7200/300 > (ieDword) parameters->int0Parameter;
+	return Schedule(0xFFFFFFu << (parameters->int0Parameter + 1), core->GetGame()->GameTime);
 }
 
 //this trigger uses hours
 int GameScript::TimeLT(Scriptable* /*Sender*/, Trigger* parameters)
 {
-	return (core->GetGame()->GameTime/AI_UPDATE_TIME)%7200/300 < (ieDword) parameters->int0Parameter;
+	return Schedule(0xFFFFFFu >> (24 - parameters->int0Parameter - 1), core->GetGame()->GameTime);
 }
 
 int GameScript::HotKey(Scriptable* Sender, Trigger* parameters)
@@ -3251,10 +3244,10 @@ int GameScript::InteractingWith(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 	GameControl *gc = core->GetGameControl();
-	if (Sender->GetGlobalID() != gc->dialoghandler->targetID && Sender->GetGlobalID() != gc->dialoghandler->speakerID) {
+	if (!gc->dialoghandler->InDialog(Sender)) {
 		return 0;
 	}
-	if (tar->GetGlobalID() != gc->dialoghandler->targetID && tar->GetGlobalID() != gc->dialoghandler->speakerID) {
+	if (!gc->dialoghandler->InDialog(tar)) {
 		return 0;
 	}
 	return 1;
@@ -3770,7 +3763,7 @@ int GameScript::ModalState( Scriptable* Sender, Trigger* parameters)
 	} else {
 		scr = Sender;
 	}
-	if (scr->Type!=ST_ACTOR) {
+	if (!scr || scr->Type!=ST_ACTOR) {
 		return 0;
 	}
 	Actor *actor = (Actor *) scr;
@@ -3815,11 +3808,19 @@ int GameScript::Delay( Scriptable* Sender, Trigger* parameters)
 	return (Sender->ScriptTicks % delay) <= Sender->IdleTicks;
 }
 
+#define TIMEOFDAY_DAY		0	/* 7-21 */
+#define TIMEOFDAY_DUSK		1	/* 21-22 */
+#define TIMEOFDAY_NIGHT		2	/* 22-6 */
+#define TIMEOFDAY_MORNING	3	/* 6-7 */
+
 int GameScript::TimeOfDay(Scriptable* /*Sender*/, Trigger* parameters)
 {
-	ieDword timeofday = (core->GetGame()->GameTime/AI_UPDATE_TIME)%7200/1800;
+	int hour = (core->GetGame()->GameTime/AI_UPDATE_TIME)%7200/300;
 
-	if (timeofday==(ieDword) parameters->int0Parameter) {
+	if ((parameters->int0Parameter == TIMEOFDAY_DAY && hour >= 7 && hour < 21)
+		|| (parameters->int0Parameter == TIMEOFDAY_DUSK && hour == 21)
+		|| (parameters->int0Parameter == TIMEOFDAY_NIGHT && (hour >= 22 || hour < 6))
+		|| (parameters->int0Parameter == TIMEOFDAY_MORNING && hour == 6)) {
 		return 1;
 	}
 	return 0;
@@ -3963,6 +3964,9 @@ int GameScript::Unusable(Scriptable* Sender, Trigger* parameters)
 	Actor *actor = (Actor *) Sender;
 
 	Item *item = gamedata->GetItem(parameters->string0Parameter);
+	if (!item) {
+		return 0;
+	}
 	int ret;
 	if (actor->Unusable(item)) {
 		ret = 0;
@@ -4112,14 +4116,7 @@ int GameScript::UsedExit(Scriptable* Sender, Trigger* parameters)
 		return 0;
 	}
 
-	Map *ca = core->GetGame()->GetMap(actor->LastArea, false);
-
-	if (!ca) {
-		return 0;
-	}
-
-	InfoPoint *ip = ca->GetInfoPointByGlobalID(actor->UsedExit);
-	if (!ip || ip->Type!=ST_TRAVEL) {
+	if (!actor->LastArea[0]) {
 		return 0;
 	}
 
@@ -4135,7 +4132,7 @@ int GameScript::UsedExit(Scriptable* Sender, Trigger* parameters)
 			continue;
 		}
 		const char *exit = tm->QueryField( i, 1 );
-		if (strnicmp(ip->GetScriptName(), exit, 32) ) {
+		if (strnicmp(actor->UsedExit, exit, 32) ) {
 			continue;
 		}
 		return 1;
@@ -4163,5 +4160,452 @@ int GameScript::BeenInParty(Scriptable* Sender, Trigger* /*parameters*/)
 	Actor *actor = (Actor *) Sender;
 	return actor->GetStat(IE_MC_FLAGS) & MC_BEENINPARTY;
 }
+
+/*
+ * TobEx triggers
+ */
+
+/* Defines the object that the next trigger will be evaluated in reference to. This trigger
+ * does not evaluate and does not count as a trigger in an OR() block. This trigger ignores
+ * the Eval() trigger when finding the next trigger to evaluate the object for. If the object
+ * cannot be found, the next trigger will evaluate to false.
+ */
+int GameScript::NextTriggerObject(Scriptable* /*Sender*/, Trigger* /*parameters*/)
+{
+	// TODO: implement
+	return 0;
+}
+
+/* Compares the animation movement rate of the target creature specified by Object to Value.
+ * This is not affected by slow or haste, but is affected if the Object is entangled, webbed, etc.
+ */
+int GameScript::MovementRate(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int rate = actor->GetBase(IE_MOVEMENTRATE);
+	if (actor->Immobile()) {
+		rate = 0;
+	}
+	return rate == parameters->int0Parameter;
+}
+
+int GameScript::MovementRateGT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int rate = actor->GetBase(IE_MOVEMENTRATE);
+	if (actor->Immobile()) {
+		rate = 0;
+	}
+	return rate > parameters->int0Parameter;
+}
+
+int GameScript::MovementRateLT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int rate = actor->GetBase(IE_MOVEMENTRATE);
+	if (actor->Immobile()) {
+		rate = 0;
+	}
+	return rate < parameters->int0Parameter;
+}
+
+// Compares the number of mirror images present on the target creature specified by Object to Value.
+int GameScript::NumMirrorImages(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	return (signed)actor->GetStat(IE_MIRRORIMAGES) == parameters->int0Parameter;
+}
+
+int GameScript::NumMirrorImagesGT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	return (signed)actor->GetStat(IE_MIRRORIMAGES) > parameters->int0Parameter;
+}
+
+int GameScript::NumMirrorImagesLT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	return (signed)actor->GetStat(IE_MIRRORIMAGES) < parameters->int0Parameter;
+}
+
+/* Returns true if the target creature specified by Object is bouncing spells of power Level.
+ * This returns true for both Bounce Spell Level (199) and Decrementing Bounce Spells (200) effects.
+ * (fx_bounce_spelllevel and fx_bounce_spelllevel_dec respectively)
+ */
+static EffectRef fx_level_bounce_ref = { "Bounce:SpellLevel", -1 };
+static EffectRef fx_level_bounce_dec_ref = { "Bounce:SpellLevelDec", -1 };
+int GameScript::BouncingSpellLevel(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	return actor->fxqueue.HasEffectWithPower(fx_level_bounce_ref, parameters->int0Parameter) ||
+		actor->fxqueue.HasEffectWithPower(fx_level_bounce_dec_ref, parameters->int0Parameter);
+}
+
+/* Compares the number of spell bounces remaining on the target creature specified by Object
+ * at the power Level to Amount. If Object has the Bounce Spell Level (199) opcode, then the
+ * number of spell bounces is unsigned 0xFFFFFFFF.
+ * NOTE: does not check for multiple bounce effects (if that's even possible)
+ */
+int GameScript::NumBouncingSpellLevel(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	if (actor->fxqueue.HasEffectWithPower(fx_level_bounce_ref, parameters->int0Parameter)) {
+		// FIXME: cheating, probably doesn't matter
+		bounceCount = 0xFFFF;
+	} else {
+		Effect *fx = actor->fxqueue.HasEffectWithPower(fx_level_bounce_dec_ref, parameters->int0Parameter);
+		if (fx) {
+			bounceCount = fx->Parameter1;
+		}
+	}
+
+	return bounceCount == parameters->int1Parameter;
+}
+
+int GameScript::NumBouncingSpellLevelGT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	if (actor->fxqueue.HasEffectWithPower(fx_level_bounce_ref, parameters->int0Parameter)) {
+		// FIXME: cheating, probably doesn't matter
+		bounceCount = 0xFFFF;
+	} else {
+		Effect *fx = actor->fxqueue.HasEffectWithPower(fx_level_bounce_dec_ref, parameters->int0Parameter);
+		if (fx) {
+			bounceCount = fx->Parameter1;
+		}
+	}
+
+	return bounceCount > parameters->int1Parameter;
+}
+
+int GameScript::NumBouncingSpellLevelLT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	if (actor->fxqueue.HasEffectWithPower(fx_level_bounce_ref, parameters->int0Parameter)) {
+		// FIXME: cheating, probably doesn't matter
+		bounceCount = 0xFFFF;
+	} else {
+		Effect *fx = actor->fxqueue.HasEffectWithPower(fx_level_bounce_dec_ref, parameters->int0Parameter);
+		if (fx) {
+			bounceCount = fx->Parameter1;
+		}
+	}
+
+	return bounceCount < parameters->int1Parameter;
+}
+
+/* Returns true if the target creature specified by Object is protected from spells of power Level.
+ * This returns true for both Protection from Spell Levels (102) and Decrementing Spell Immunity (201) effects.
+ */
+static EffectRef fx_level_immunity_ref = { "Protection:Spelllevel", -1 };
+static EffectRef fx_level_immunity_dec_ref = { "Protection:SpellLevelDec", -1 };
+int GameScript::ImmuneToSpellLevel(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	return actor->fxqueue.HasEffectWithPower(fx_level_immunity_ref, parameters->int0Parameter) ||
+	actor->fxqueue.HasEffectWithPower(fx_level_immunity_dec_ref, parameters->int0Parameter);
+}
+
+/* Compares the number of spell protections remaining on the target creature specified by Object
+ * at the power Level to Amount. If Object has the Protection from Spell Levels (102) opcode,
+ * then the number of spell protections is unsigned 0xFFFFFFFF.
+ */
+int GameScript::NumImmuneToSpellLevel(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	if (actor->fxqueue.HasEffectWithPower(fx_level_immunity_ref, parameters->int0Parameter)) {
+		// FIXME: cheating, probably doesn't matter
+		bounceCount = 0xFFFF;
+	} else {
+		Effect *fx = actor->fxqueue.HasEffectWithPower(fx_level_immunity_dec_ref, parameters->int0Parameter);
+		if (fx) {
+			bounceCount = fx->Parameter1;
+		}
+	}
+
+	return bounceCount == parameters->int1Parameter;
+}
+
+int GameScript::NumImmuneToSpellLevelGT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	if (actor->fxqueue.HasEffectWithPower(fx_level_immunity_ref, parameters->int0Parameter)) {
+		// FIXME: cheating, probably doesn't matter
+		bounceCount = 0xFFFF;
+	} else {
+		Effect *fx = actor->fxqueue.HasEffectWithPower(fx_level_immunity_dec_ref, parameters->int0Parameter);
+		if (fx) {
+			bounceCount = fx->Parameter1;
+		}
+	}
+
+	return bounceCount > parameters->int1Parameter;
+}
+
+int GameScript::NumImmuneToSpellLevelLT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	if (actor->fxqueue.HasEffectWithPower(fx_level_immunity_ref, parameters->int0Parameter)) {
+		// FIXME: cheating, probably doesn't matter
+		bounceCount = 0xFFFF;
+	} else {
+		Effect *fx = actor->fxqueue.HasEffectWithPower(fx_level_immunity_dec_ref, parameters->int0Parameter);
+		if (fx) {
+			bounceCount = fx->Parameter1;
+		}
+	}
+
+	return bounceCount < parameters->int1Parameter;
+}
+
+// Compares the number of ticks left of time stop to Number.
+int GameScript::TimeStopCounter(Scriptable* /*Sender*/, Trigger* parameters)
+{
+	return core->GetGame()->RemainingTimestop() == parameters->int0Parameter;
+}
+
+int GameScript::TimeStopCounterGT(Scriptable* /*Sender*/, Trigger* parameters)
+{
+	return core->GetGame()->RemainingTimestop() > parameters->int0Parameter;
+}
+
+int GameScript::TimeStopCounterLT(Scriptable* /*Sender*/, Trigger* parameters)
+{
+	return core->GetGame()->RemainingTimestop() < parameters->int0Parameter;
+}
+
+// Returns true if the the target sprite specified by Object is the caster of time stop
+int GameScript::TimeStopObject(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+
+	return tar == core->GetGame()->GetTimestopOwner();
+}
+
+// Compares the number of spell traps remaining on the target creature specified
+// by Object at the power Level to Amount.
+static EffectRef fx_spelltrap = { "SpellTrap", -1 };
+int GameScript::NumTrappingSpellLevel(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	Effect *fx = actor->fxqueue.HasEffectWithPower(fx_spelltrap, parameters->int0Parameter);
+	if (fx) {
+		bounceCount = fx->Parameter1;
+	}
+
+	return bounceCount == parameters->int1Parameter;
+}
+
+int GameScript::NumTrappingSpellLevelGT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	Effect *fx = actor->fxqueue.HasEffectWithPower(fx_spelltrap, parameters->int0Parameter);
+	if (fx) {
+		bounceCount = fx->Parameter1;
+	}
+
+	return bounceCount > parameters->int1Parameter;
+}
+
+int GameScript::NumTrappingSpellLevelLT(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	int bounceCount = 0;
+	Effect *fx = actor->fxqueue.HasEffectWithPower(fx_spelltrap, parameters->int0Parameter);
+	if (fx) {
+		bounceCount = fx->Parameter1;
+	}
+
+	return bounceCount < parameters->int1Parameter;
+}
+
+// Returns true if the target creature specified by Object is dual-classed and
+// the original class matches Class.
+int GameScript::OriginalClass(Scriptable* Sender, Trigger* parameters)
+{
+	Scriptable *tar = GetActorFromObject(Sender, parameters->objectParameter);
+	if (!tar || tar->Type != ST_ACTOR) {
+		return 0;
+	}
+	Actor *actor = (Actor *) tar;
+
+	// we need to look up the bit mapping again
+	return actor->WasClass(parameters->int0Parameter);
+}
+
+// NOTE: HPLost, HPLostGT, HPLostLT are implemented above
+
+/* ASSIGN
+ * Assigns a value determined by Statement of the type Type from ARGTYPE.IDS (INT integer, or STR string)
+ * to a local trigger block variable. The general form of Statement is "prefix[params]". This trigger
+ * does not evaluate and does not count as a trigger in an OR() block.
+ *
+ * "prefix" can be:                                                                                                                                                                                                                                                                                                          *
+ * prefix	| description |	params | type	| examples
+ * c	| assigns a constant value	| integer or string	| c[1], c[FOO]
+ * e	| assigns the value of an expression	| expression (see trigger 0x411B Eval() for format)	| e[6 + 7]
+ * id	| assigns the index of a IDS file value	| file.value	| id[EA.CHARMED]
+ * s	| assigns the value of the stat specified of the current object	| STATS.IDS name	| s[LEVEL]
+ * sp	| assigns the value of the special value specified (of the current object, if applicable)	| ASGNSPEC.IDS name	| sp[SPRITE_PT_X]
+ * tn	| assigns the value of a 2DA file value by coordinates	| file.x.y	| tn[IMPORT01.0.0]
+ * ts	| assigns the value of a 2DA file value by column and row name	| file.column.row	| tn[IMPORT01.ITEMS.1]
+ * v	| assigns the value of a variable	| name.scope	| v[foo.GLOBAL]
+ *
+ * "params" values containing #<num> and @<num> are replaced by the integer and string values,
+ * respectively, stored in local trigger block variables of index "num". Avoid using integer
+ * variables in expressions of string type. Avoid using string variables in expressions of integer
+ * type. The range of "num" is 0 to 24.
+ */
+int GameScript::Assign(Scriptable* /*Sender*/, Trigger* /*parameters*/)
+{
+	// TODO: implement
+	return 0;
+}
+
+/* EVAL
+ * Overwrites the (Loc)th argument of type Type from ARGTYPE.IDS (INT integer, or STR string)
+ * in the next trigger with the value returned by Expression. This trigger does not evaluate
+ * and does not count as a trigger in an OR() block. This trigger does not overwrite values of
+ * the Assign(), NextTriggerObject() and OR() triggers. The NextTriggerObject() trigger ignores
+ * this trigger.
+ *
+ * Expression is a math expression that can use the following symbols:                                                                                                                                                                                                                                                          *   = + - * / % ^ ( )
+ *   min(x, y), max(x, y), avg(x, y)
+ *   ceil(x), floor(x), round(x)
+ *   abs(x)
+ *   reciprocal(x)
+ *   sqrt(x), pow(x, y)
+ *   log(x), log10(x)
+ *   sin(x), cos(x), tan(x), sinh(x), cosh(x), tanh(x), asin(x), acos(x), atan(x), atan2(x)
+ *   Custom: and(x, y), or(x, y), band(x, y), bor(x, y)
+ *
+ * Any text in Expression of form #<num> and @<num> is replaced by the integer and string values,
+ * respectively, stored in local trigger block variables of index "num". Avoid using integer
+ * variables in expressions of string type. Avoid using string variables in expressions of integer
+ * type. The range of "num" is 0 to 24.
+ */
+int GameScript::Eval(Scriptable* /*Sender*/, Trigger* /*parameters*/)
+{
+	// TODO: implement
+	return 0;
+}
+
+/* Compares "Num1" to "Num2", where E is equals, GT is greater than, and LT is less than.
+ * To make use of these triggers, the 0x411B Eval() trigger should be used prior to this trigger.
+ */
+int GameScript::E(Scriptable* /*Sender*/, Trigger* parameters)
+{
+	return parameters->int0Parameter == parameters->int1Parameter;
+}
+
+int GameScript::GT(Scriptable* /*Sender*/, Trigger* parameters)
+{
+	return parameters->int0Parameter > parameters->int1Parameter;
+}
+
+int GameScript::LT(Scriptable* /*Sender*/, Trigger* parameters)
+{
+	return parameters->int0Parameter < parameters->int1Parameter;
+}
+
+/*
+ * End TobEx triggers
+ */
 
 }
