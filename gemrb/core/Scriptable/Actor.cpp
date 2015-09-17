@@ -139,6 +139,8 @@ static ieDword NoExtraDifficultyDmg = 0;
 #define NUM_SELECT_SOUNDS 6 //in bg1 this is 4 but doesn't need to be checked
 #define NUM_MC_SELECT_SOUNDS 4 //number of main charater select sounds
 
+#define MAX_FEATV 2147483648 // 1<<31 (used for the triple-stat feat handling)
+
 //item usability array
 struct ItemUseType {
 	ieResRef table; //which table contains the stat usability flags
@@ -1427,7 +1429,7 @@ static void pcf_armorlevel(Actor *actor, ieDword /*oldValue*/, ieDword newValue)
 	}
 }
 
-static int maximum_values[MAX_STATS]={
+static unsigned int maximum_values[MAX_STATS]={
 32767,32767,20,100,100,100,100,25,10,25,25,25,25,25,200,200,//0f
 200,200,200,200,200,100,100,100,100,100,255,255,255,255,100,100,//1f
 200,200,MAX_LEVEL,255,25,100,25,25,25,25,25,999999999,999999999,999999999,25,25,//2f
@@ -1436,7 +1438,7 @@ static int maximum_values[MAX_STATS]={
 25,1,1,255,25,25,255,255,25,255,255,255,255,255,255,255,//5f
 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,//6f
 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,//7f
-255,255,255,255,255,255,255,100,100,100,999999,5,5,999999,1,1,//8f
+255,255,255,MAX_FEATV,MAX_FEATV,MAX_FEATV,255,100,100,100,999999,5,5,999999,1,1,//8f
 1,25,25,255,1,1,1,25,0,100,100,1,255,255,255,255,//9f
 255,255,255,255,255,255,20,255,255,1,20,255,999999999,999999999,1,1,//af
 999999999,999999999,0,0,20,0,0,0,0,0,0,0,0,0,0,0,//bf
@@ -2758,8 +2760,8 @@ ieDword Actor::ClampStat(unsigned int StatIndex, ieDword Value) const
 			Value = (ieDword) -100;
 		} else {
 			if (maximum_values[StatIndex] > 0) {
-				if ( (signed) Value > maximum_values[StatIndex]) {
-					Value = (ieDword) maximum_values[StatIndex];
+				if ( Value > maximum_values[StatIndex]) {
+					Value = maximum_values[StatIndex];
 				}
 			}
 		}
@@ -7012,7 +7014,7 @@ void Actor::ModifyDamage(Scriptable *hitter, int &damage, int &resisted, int dam
 			} else {
 				int resistance = (signed)GetSafeStat(it->second.resist_stat);
 				// avoid buggy data
-				if (abs(resistance) > maximum_values[it->second.resist_stat]) {
+				if ((unsigned)abs(resistance) > maximum_values[it->second.resist_stat]) {
 					resistance = 0;
 					Log(DEBUG, "ModifyDamage", "Ignoring bad damage resistance value (%d).", resistance);
 				}
@@ -8812,13 +8814,14 @@ void Actor::SetFeat(unsigned int feat, int mode)
 	ieDword idx = feat>>5;
 	switch (mode) {
 		case OP_SET: case OP_OR:
-			BaseStats[IE_FEATS1+idx]|=mask;
+			SetBaseBit(IE_FEATS1+idx, mask, 1);
 			break;
 		case OP_NAND:
-			BaseStats[IE_FEATS1+idx]&=~mask;
+			SetBaseBit(IE_FEATS1+idx, mask, 0);
 			break;
 		case OP_XOR:
-			BaseStats[IE_FEATS1+idx]^=mask;
+			// maybe extend SetBaseBit at some point
+			SetBase(IE_FEATS1+idx, BaseStats[IE_FEATS1+idx] ^ mask);
 			break;
 	}
 }
