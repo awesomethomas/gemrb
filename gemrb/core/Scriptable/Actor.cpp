@@ -139,7 +139,7 @@ static ieDword NoExtraDifficultyDmg = 0;
 #define NUM_SELECT_SOUNDS 6 //in bg1 this is 4 but doesn't need to be checked
 #define NUM_MC_SELECT_SOUNDS 4 //number of main charater select sounds
 
-#define MAX_FEATV 2147483648 // 1<<31 (used for the triple-stat feat handling)
+#define MAX_FEATV 2147483648U // 1<<31 (used for the triple-stat feat handling)
 
 //item usability array
 struct ItemUseType {
@@ -786,18 +786,17 @@ static void ApplyClab_internal(Actor *actor, const char *clab, int level, bool r
 					}
 				}
 				else if (!memcmp(res,"FA_",3)) {//iwd2 only: innate name strref
-					//memorize these
-					int x=atoi(res+3);
-					ieResRef resref;
-					ResolveSpellName(resref, x);
-					actor->LearnSpell(resref, LS_MEMO, IE_IWD2_SPELL_INNATE);
+					//memorize these?
+					// we now learn them just to get the feedback string out
+					actor->LearnSpell(res+3, LS_MEMO|LS_LEARN, IE_IWD2_SPELL_INNATE);
+					actor->spellbook.RemoveSpell(res+3);
+					core->ApplySpell(res+3, actor, actor, 0);
 				}
 				else if (!memcmp(res,"FS_",3)) {//iwd2 only: song name strref (used by unused kits)
-					//don't memorize these
-					int x=atoi(res+3);
-					ieResRef resref;
-					ResolveSpellName(resref, x);
-					actor->LearnSpell(resref, 0, IE_IWD2_SPELL_SONG);
+					//don't memorize these?
+					actor->LearnSpell(res+3, LS_LEARN, IE_IWD2_SPELL_SONG);
+					actor->spellbook.RemoveSpell(res+3);
+					core->ApplySpell(res+3, actor, actor, 0);
 				}
 				else if (!memcmp(res,"RA_",3)) {//iwd2 only
 					//remove ability
@@ -2760,7 +2759,7 @@ ieDword Actor::ClampStat(unsigned int StatIndex, ieDword Value) const
 			Value = (ieDword) -100;
 		} else {
 			if (maximum_values[StatIndex] > 0) {
-				if ( Value > maximum_values[StatIndex]) {
+				if ((signed)Value > 0 && Value > maximum_values[StatIndex]) {
 					Value = maximum_values[StatIndex];
 				}
 			}
@@ -3081,7 +3080,9 @@ void Actor::RefreshEffects(EffectQueue *fx)
 	}
 	// we need to recalc these, since the stats or equipped gear may have changed (and this is relevant in iwd2)
 	AC.SetWisdomBonus(GetWisdomAC());
-	AC.SetDexterityBonus(GetDexterityAC()); // FIXME: but the effects may reset this too and we shouldn't touch it in that case (flatfooted!)
+	// FIXME: but the effects may reset this too and we shouldn't touch it in that case (flatfooted!)
+	// flatfooted by invisible attacker: this is handled by GetDefense and ok
+	AC.SetDexterityBonus(GetDexterityAC());
 
 	// IE_CLASS is >classcount for non-PCs/NPCs
 	if (BaseStats[IE_CLASS] > 0 && BaseStats[IE_CLASS] < (ieDword)classcount)
@@ -3126,6 +3127,12 @@ void Actor::RefreshEffects(EffectQueue *fx)
 				spellbook.BonusSpells(IE_SPELL_TYPE_PRIEST, spllevels, mxsplwis+spllevels*level);
 			}
 		}
+	}
+
+	// iwd2 barbarian speed increase isn't handled like for monks (normal clab)!?
+	// TODO: recheck when we have unhardcoded actor speeds (just add it there instead)
+	if (third && GetBarbarianLevel()) {
+		Modified[IE_MOVEMENTRATE] += 1;
 	}
 
 	// check if any new portrait icon was removed or added
@@ -6592,6 +6599,14 @@ int Actor::GetDefense(int DamageType, ieDword wflags, Actor *attacker)
 		}
 	}
 
+	// is the attacker invisible? We don't care if we know the right uncanny dodge
+	if (third && attacker && attacker->GetStat(state_invisible)) {
+		if ((GetStat(IE_UNCANNY_DODGE) & 0x100) == 0) {
+			// oops, we lose the dex bonus (like flatfooted)
+			defense -= AC.GetDexterityBonus();
+		}
+	}
+
 	if (attacker) {
 		defense -= fxqueue.BonusAgainstCreature(fx_ac_vs_creature_type_ref,attacker);
 	}
@@ -8583,7 +8598,14 @@ int Actor::GetSneakAttackDamage(Actor *target, WeaponInfo &wi, int &multiplier, 
 	// rogue is hidden or flanking OR the target is immobile (sleep ... stun)
 	// or one of the stat overrides is set (unconfirmed for iwd2!)
 	if (invisible || always || target->Immobile() || IsBehind(target)) {
-		if (target->Modified[IE_DISABLEBACKSTAB] || weaponImmunity) {
+		bool dodgy = target->GetStat(IE_UNCANNY_DODGE) & 0x200;
+		// if true, we need to be 4+ levels higher to still manage a sneak attack
+		if (dodgy) {
+			if (GetStat(IE_CLASSLEVELSUM) >= target->GetStat(IE_CLASSLEVELSUM) + 4) {
+				dodgy = false;
+			}
+		}
+		if (target->Modified[IE_DISABLEBACKSTAB] || weaponImmunity || dodgy) {
 			displaymsg->DisplayConstantString (STR_BACKSTAB_FAIL, DMC_WHITE);
 			wi.backstabbing = false;
 		} else {
