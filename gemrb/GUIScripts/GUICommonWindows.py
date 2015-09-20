@@ -29,7 +29,7 @@ from ie_modal import *
 from ie_action import *
 from ie_slots import SLOT_QUIVER
 from ie_restype import RES_2DA
-from GameCheck import PARTY_SIZE
+from GameCheck import MAX_PARTY_SIZE
 import GameCheck
 import GUICommon
 import CommonTables
@@ -1272,7 +1272,7 @@ def GetPortraitButtonPairs (Window, ExtraSlots=0, Mode="vertical"):
 	pairs = {}
 	oldSlotCount = 6 + ExtraSlots
 
-	for i in range(min(oldSlotCount, PARTY_SIZE)): # the default chu/game limit or less
+	for i in range(min(oldSlotCount, MAX_PARTY_SIZE)): # the default chu/game limit or less
 		pairs[i] = Window.GetControl (i)
 
 	# nothing left to do
@@ -1282,6 +1282,11 @@ def GetPortraitButtonPairs (Window, ExtraSlots=0, Mode="vertical"):
 
 	if GameCheck.IsIWD2() or GameCheck.IsPST():
 		print "Parties larger than 6 are currently not supported in IWD2 and PST! Using 6 ..."
+		return pairs
+
+	# GUIWORLD doesn't have a separate portraits window, so we need to skip
+	# all this magic when reforming an overflowing party
+	if GemRB.GetPartySize () > MAX_PARTY_SIZE:
 		return pairs
 
 	# generate new buttons by copying from existing ones

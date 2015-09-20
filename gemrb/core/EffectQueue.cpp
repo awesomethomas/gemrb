@@ -1162,10 +1162,22 @@ static bool check_resistance(Actor* actor, Effect* fx)
 	}
 	if( saved) {
 		if( fx->IsSaveForHalfDamage) {
-			fx->Parameter1/=2;
+			// if we have evasion, we take no damage
+			// sadly there's no feat or stat for it
+			if (iwd2fx && (actor->GetThiefLevel() > 1 || actor->GetMonkLevel())) {
+				fx->Parameter1 = 0;
+				return true;
+			} else {
+				fx->Parameter1 /= 2;
+			}
 		} else {
 			Log(MESSAGE, "EffectQueue", "%s saved against effect: %s", actor->GetName(1), (char*) Opcodes[fx->Opcode].Name);
 			return true;
+		}
+	} else {
+		// improved evasion: take only half damage even though we failed the save
+		if (iwd2fx && fx->IsSaveForHalfDamage && actor->HasFeat(FEAT_IMPROVED_EVASION)) {
+			fx->Parameter1 /= 2;
 		}
 	}
 	return false;

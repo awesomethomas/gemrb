@@ -139,7 +139,7 @@ static ieDword NoExtraDifficultyDmg = 0;
 #define NUM_SELECT_SOUNDS 6 //in bg1 this is 4 but doesn't need to be checked
 #define NUM_MC_SELECT_SOUNDS 4 //number of main charater select sounds
 
-#define MAX_FEATV 2147483648U // 1<<31 (used for the triple-stat feat handling)
+#define MAX_FEATV 4294967295U // 1<<32-1 (used for the triple-stat feat handling)
 
 //item usability array
 struct ItemUseType {
@@ -788,15 +788,23 @@ static void ApplyClab_internal(Actor *actor, const char *clab, int level, bool r
 				else if (!memcmp(res,"FA_",3)) {//iwd2 only: innate name strref
 					//memorize these?
 					// we now learn them just to get the feedback string out
-					actor->LearnSpell(res+3, LS_MEMO|LS_LEARN, IE_IWD2_SPELL_INNATE);
-					actor->spellbook.RemoveSpell(res+3);
-					core->ApplySpell(res+3, actor, actor, 0);
+					if (remove) {
+						actor->fxqueue.RemoveAllEffects(res+3);
+					} else {
+						actor->LearnSpell(res+3, LS_MEMO|LS_LEARN, IE_IWD2_SPELL_INNATE);
+						actor->spellbook.RemoveSpell(res+3);
+						core->ApplySpell(res+3, actor, actor, 0);
+					}
 				}
 				else if (!memcmp(res,"FS_",3)) {//iwd2 only: song name strref (used by unused kits)
 					//don't memorize these?
-					actor->LearnSpell(res+3, LS_LEARN, IE_IWD2_SPELL_SONG);
-					actor->spellbook.RemoveSpell(res+3);
-					core->ApplySpell(res+3, actor, actor, 0);
+					if (remove) {
+						actor->fxqueue.RemoveAllEffects(res+3);
+					} else {
+						actor->LearnSpell(res+3, LS_LEARN, IE_IWD2_SPELL_SONG);
+						actor->spellbook.RemoveSpell(res+3);
+						core->ApplySpell(res+3, actor, actor, 0);
+					}
 				}
 				else if (!memcmp(res,"RA_",3)) {//iwd2 only
 					//remove ability
@@ -8836,14 +8844,13 @@ void Actor::SetFeat(unsigned int feat, int mode)
 	ieDword idx = feat>>5;
 	switch (mode) {
 		case OP_SET: case OP_OR:
-			SetBaseBit(IE_FEATS1+idx, mask, 1);
+			BaseStats[IE_FEATS1+idx]|=mask;
 			break;
 		case OP_NAND:
-			SetBaseBit(IE_FEATS1+idx, mask, 0);
+			BaseStats[IE_FEATS1+idx]&=~mask;
 			break;
 		case OP_XOR:
-			// maybe extend SetBaseBit at some point
-			SetBase(IE_FEATS1+idx, BaseStats[IE_FEATS1+idx] ^ mask);
+			BaseStats[IE_FEATS1+idx]^=mask;
 			break;
 	}
 }
@@ -9194,7 +9201,7 @@ int Actor::GetFeat(unsigned int feat) const
 	if (feat>=MAX_FEATS) {
 		return -1;
 	}
-	if (Modified[IE_FEATS1+(feat>>5)]&(1<<(feat&31)) ) {
+	if (BaseStats[IE_FEATS1+(feat>>5)]&(1<<(feat&31)) ) {
 		//return the numeric stat value, instead of the boolean
 		if (featstats[feat]) {
 			return Modified[featstats[feat]];
@@ -9210,7 +9217,7 @@ bool Actor::HasFeat(unsigned int featindex) const
 	if (featindex>=MAX_FEATS) return false;
 	unsigned int pos = IE_FEATS1+(featindex>>5);
 	unsigned int bit = 1<<(featindex&31);
-	if (Modified[pos]&bit) return true;
+	if (BaseStats[pos]&bit) return true;
 	return false;
 }
 
