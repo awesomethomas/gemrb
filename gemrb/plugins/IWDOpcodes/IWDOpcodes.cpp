@@ -400,7 +400,7 @@ static EffectRef fx_iwd_visual_spell_hit_ref = { "IWDVisualSpellHit", -1 }; //0x
 static EffectRef fx_umberhulk_gaze_ref = { "UmberHulkGaze", -1 }; //0x100
 static EffectRef fx_protection_from_evil_ref = { "ProtectionFromEvil", -1 }; //401
 static EffectRef fx_wound_ref = { "BleedingWounds", -1 }; //416
-
+static EffectRef fx_cast_spell_on_condition_ref = { "CastSpellOnCondition", -1 };
 
 struct IWDIDSEntry {
 	ieDword value;
@@ -553,7 +553,7 @@ static int check_iwd_targeting(Scriptable* Owner, Actor* target, ieDword value, 
 		return DiffCore((ieDword) target->GetAnims()->GetCircleSize(), val, rel);
 	case STI_EVASION:
 		if (core->HasFeature(GF_ENHANCED_EFFECTS)) {
-			// NOTE: no idea if this is used in iwd2 too
+			// NOTE: no idea if this is used in iwd2 too (00misc32 has it set)
 			// FIXME: check for evasion itself
 			if (target->GetThiefLevel() < 2 && target->GetMonkLevel() < 1) {
 				return 0;
@@ -954,8 +954,8 @@ int fx_vampiric_touch (Scriptable* Owner, Actor* target, Effect* fx)
 	Actor *donor;
 
 	switch(fx->Parameter2) {
-		case 0: receiver = target; donor = owner; break;
-		case 1: receiver = owner; donor = target; break;
+		case 0: receiver = owner; donor = target; break;
+		case 1: receiver = target; donor = owner; break;
 		default:
 			return FX_NOT_APPLIED;
 	}
@@ -2164,15 +2164,19 @@ int fx_cutscene (Scriptable* /*Owner*/, Actor* /*target*/, Effect* fx)
 int fx_resist_spell (Scriptable* Owner, Actor* target, Effect *fx)
 {
 	//check iwd ids targeting
-	//changed this to the opposite (cure light wounds resisted by undead)
-	if (!check_iwd_targeting(Owner, target, fx->Parameter1, fx->Parameter2) ) {
-		return FX_NOT_APPLIED;
+	// was the opposite for a while (cure light wounds resisted by undead), but that spell uses 0x122 anyway
+	// eg. bard songs check for non-allies and deaf actors to exclude them
+	if (check_iwd_targeting(Owner, target, fx->Parameter1, fx->Parameter2) ) {
+		return FX_ABORT;
 	}
 
-	if (strnicmp(fx->Resource,fx->Source,sizeof(fx->Resource)) ) {
+	// don't abort if we passed the check and we're in the same spell
+	if (!strnicmp(fx->Resource, fx->Source, sizeof(fx->Resource))) {
 		return FX_APPLIED;
 	}
 	//this has effect only on first apply, it will stop applying the spell
+	// FIXME: should probably return FX_NOT_APPLIED instead
+	Log(DEBUG, "IWDOpcodes", "fx_resist_spell: blatantly resisted spell %s!", fx->Source);
 	return FX_ABORT;
 }
 
@@ -2595,7 +2599,17 @@ int fx_fireshield (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		target->AddPortraitIcon(PI_FIRESHIELD);
 		target->SetOverlay(OV_FIRESHIELD1);
 	}
-	memcpy(target->applyWhenBeingHit,fx->Resource,sizeof(ieResRef));
+	// create a general CastSpellOnCondition effect (bg2) for the payload
+	// much nicer than iwd's ApplyDamageNearby
+	if (fx->FirstApply) {
+		Effect *fx2 = EffectQueue::CreateEffect(fx_cast_spell_on_condition_ref, 1, COND_GOTHIT, FX_DURATION_INSTANT_LIMITED);
+		assert(fx2);
+		fx2->Duration = fx->Duration;
+		CopyResRef(fx2->Source, fx->Source);
+		CopyResRef(fx2->Resource, fx->Resource);
+		core->ApplyEffect(fx2, target, target);
+		delete fx2;
+	}
 	return FX_APPLIED;
 }
 
@@ -2666,7 +2680,7 @@ int fx_summon_enemy (Scriptable* Owner, Actor* target, Effect* fx)
 
 //412 Control2
 
-int fx_control (Scriptable* Owner, Actor* target, Effect* fx)
+int fx_control (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	//prot from evil deflects it
 	if (target->fxqueue.HasEffect(fx_protection_from_evil_ref)) return FX_NOT_APPLIED;
@@ -2686,22 +2700,23 @@ int fx_control (Scriptable* Owner, Actor* target, Effect* fx)
 	}
 	if(0) print("fx_control(%2d)", fx->Opcode);
 	bool enemyally = true;
-	if (Owner->Type==ST_ACTOR) {
-		enemyally = ((Actor *) Owner)->GetStat(IE_EA)>EA_GOODCUTOFF; //or evilcutoff?
+	Scriptable *caster = GetCasterObject();
+	if (caster->Type==ST_ACTOR) {
+		enemyally = ((Actor *) caster)->GetStat(IE_EA)>EA_GOODCUTOFF;
 	}
 
-	switch(fx->Parameter2)
-	{
-	case 0:
-		displaymsg->DisplayConstantStringName(STR_CHARMED, DMC_WHITE, target);
-		break;
-	case 1:
-		displaymsg->DisplayConstantStringName(STR_DIRECHARMED, DMC_WHITE, target);
-		break;
-	default:
-		displaymsg->DisplayConstantStringName(STR_CONTROLLED, DMC_WHITE, target);
-
-		break;
+	if (fx->FirstApply) {
+		switch (fx->Parameter2) {
+		case 0:
+			displaymsg->DisplayConstantStringName(STR_CHARMED, DMC_WHITE, target);
+			break;
+		case 1:
+			displaymsg->DisplayConstantStringName(STR_DIRECHARMED, DMC_WHITE, target);
+			break;
+		default:
+			displaymsg->DisplayConstantStringName(STR_CONTROLLED, DMC_WHITE, target);
+			break;
+		}
 	}
 	STATE_SET( STATE_CHARMED );
 	STAT_SET( IE_EA, enemyally?EA_ENEMY:EA_CHARMED );
@@ -3418,7 +3433,7 @@ int fx_smite_evil (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		target->ToHit.HandleFxBonus(chrmod, fx->TimingMode==FX_DURATION_INSTANT_PERMANENT);
 	}
 	STAT_ADD(IE_DAMAGEBONUS, target->GetPaladinLevel());
-	return FX_NOT_APPLIED;
+	return FX_APPLIED;
 }
 
 //447 Restoration

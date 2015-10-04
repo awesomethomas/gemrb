@@ -362,6 +362,7 @@ static EffectRef fx_remove_sanctuary_ref = { "Cure:Sanctuary", -1 };
 static EffectRef fx_disable_button_ref = { "DisableButton", -1 };
 static EffectRef fx_damage_reduction_ref = { "DamageReduction", -1 };
 static EffectRef fx_missile_damage_reduction_ref = { "MissileDamageReduction", -1 };
+static EffectRef fx_smite_evil_ref = { "SmiteEvil", -1 };
 
 //used by iwd2
 static ieResRef resref_cripstr={"cripstr"};
@@ -2977,15 +2978,6 @@ void Actor::RefreshEffects(EffectQueue *fx)
 	}
 	spellbook.ClearBonus();
 	/* these apply resrefs should be on a list as a trigger+resref */
-	memset(applyWhenHittingMelee,0,sizeof(ieResRef));
-	memset(applyWhenHittingRanged,0,sizeof(ieResRef));
-	memset(applyWhenNearLiving,0,sizeof(ieResRef));
-	memset(applyWhen50Damage,0,sizeof(ieResRef));
-	memset(applyWhen90Damage,0,sizeof(ieResRef));
-	memset(applyWhenEnemySighted,0,sizeof(ieResRef));
-	memset(applyWhenPoisoned,0,sizeof(ieResRef));
-	memset(applyWhenHelpless,0,sizeof(ieResRef));
-	memset(applyWhenAttacked,0,sizeof(ieResRef));
 	memset(applyWhenBeingHit,0,sizeof(ieResRef));
 	memset(BardSong,0,sizeof(ieResRef));
 	memset(projectileImmunity,0,ProjectileSize*sizeof(ieDword));
@@ -3197,9 +3189,7 @@ void Actor::RefreshHP() {
 	ieDword bonindex = BaseStats[IE_CLASS]-1;
 
 	//we must limit the levels to the max allowable
-	if (third) {
-		bonlevel = Modified[IE_CLASSLEVELSUM];
-	} else {
+	if (!third) {
 		if (bonlevel>maxLevelForHpRoll[bonindex]) {
 			bonlevel = maxLevelForHpRoll[bonindex];
 		}
@@ -4625,10 +4615,7 @@ ieDword Actor::GetXPLevel(int modified) const
 	float average = 0;
 	if (iwd2class) {
 		// iwd2
-		for (int i=0; i < ISCLASSES; i++) {
-			if (stats[levelslotsiwd2[i]] > 0) clscount++;
-		}
-		average = stats[IE_CLASSLEVELSUM] / (float) clscount + 0.5;
+		return stats[IE_CLASSLEVELSUM];
 	} else {
 		unsigned int levels[3]={stats[IE_LEVEL], stats[IE_LEVEL2], stats[IE_LEVEL3]};
 		average = levels[0];
@@ -4679,7 +4666,7 @@ ieDword Actor::GetBaseCasterLevel(int spelltype, int flags) const
 	default:
 		// checking if anyone uses the psion, item and song types
 		if (spelltype != IE_SPL_INNATE) {
-			Log(ERROR, "Actor", "Unhandled SPL type: %d!", spelltype);
+			Log(WARNING, "Actor", "Unhandled SPL type %d, using average casting level!", spelltype);
 		}
 		break;
 	}
@@ -6486,6 +6473,9 @@ int Actor::GetToHit(ieDword Flags, Actor *target)
 		generic += fxqueue.BonusAgainstCreature(fx_tohit_vs_creature_ref, target);
 	}
 
+	// add generic bonus
+	generic += GetStat(IE_HITBONUS);
+
 	// finally involve the Modified stat and add to it the rest of the generic bonus
 	if (ReverseToHit) {
 		ToHit.SetGenericBonus(ToHit.GetGenericBonus()-generic);
@@ -6675,11 +6665,6 @@ void Actor::PerformAttack(ieDword gameTime)
 		return;
 	}
 
-	if (target->GetStat(IE_MC_FLAGS) & MC_INVULNERABLE) {
-		Log(DEBUG, "Actor", "Attacking invulnerable target, skipping!");
-		return;
-	}
-
 	assert(!(target->IsInvisibleTo((Scriptable *) this) || (target->GetSafeStat(IE_STATE_ID) & STATE_DEAD)));
 	target->AttackedBy(this);
 	ieDword state = GetStat(IE_STATE_ID);
@@ -6774,6 +6759,11 @@ void Actor::PerformAttack(ieDword gameTime)
 		buffer.append("[Missed]");
 		Log(COMBAT, "Attack", buffer);
 		return;
+	}
+
+	// iwd2 smite evil only lasts for one attack, but has an insane duration, so remove it manually
+	if (HasSpellState(SS_SMITEEVIL)) {
+		fxqueue.RemoveAllEffects(fx_smite_evil_ref);
 	}
 
 	// check for concealment first (iwd2), both our enemies' and from our phasing problems
@@ -6879,6 +6869,11 @@ void Actor::PerformAttack(ieDword gameTime)
 	}
 
 	ModifyWeaponDamage(wi, target, damage, critical);
+
+	if (target->GetStat(IE_MC_FLAGS) & MC_INVULNERABLE) {
+		Log(DEBUG, "Actor", "Attacking invulnerable target, nulifying damage!");
+		damage = 0;
+	}
 
 	if (critical) {
 		//critical success
@@ -7148,11 +7143,7 @@ void Actor::UpdateActorState(ieDword gameTime) {
 		// handle lingering modal spells like bardsong in iwd2
 		if (modalSpellLingering && LingeringModalSpell[0]) {
 			modalSpellLingering--;
-			if (core->ModalStates[ModalState].aoe_spell) {
-				core->ApplySpellPoint(LingeringModalSpell, GetCurrentArea(), Pos, this, 0);
-			} else {
-				core->ApplySpell(LingeringModalSpell, this, this, 0);
-			}
+			ApplyModal(LingeringModalSpell);
 		}
 		if (ModalState == MS_NONE) {
 			return;
@@ -7172,11 +7163,7 @@ void Actor::UpdateActorState(ieDword gameTime) {
 			ModalSpell[0]='*';
 		} else if(ModalSpell[0]!='*') {
 			if (ModalSpellSkillCheck()) {
-				if (core->ModalStates[ModalState].aoe_spell) {
-					core->ApplySpellPoint(ModalSpell, GetCurrentArea(), Pos, this, 0);
-				} else {
-					core->ApplySpell(ModalSpell, this, this, 0);
-				}
+				ApplyModal(ModalSpell);
 				if (InParty) {
 					displaymsg->DisplayStringName(core->ModalStates[ModalState].entering_str, DMC_WHITE, this, IE_STR_SOUND|IE_STR_SPEECH);
 				}
@@ -7192,6 +7179,27 @@ void Actor::UpdateActorState(ieDword gameTime) {
 		core->GetGame()->ResetPartyCommentTimes();
 	}
 
+}
+
+void Actor::ApplyModal(ieResRef modalSpell)
+{
+	unsigned int aoe = core->ModalStates[ModalState].aoe_spell;
+	if (aoe == 1) {
+		core->ApplySpellPoint(modalSpell, GetCurrentArea(), Pos, this, 0);
+	} else if (aoe == 2) {
+		// target actors around us manually
+		// used for iwd2 songs, as the spells don't use an aoe projectile
+		if (!area) return;
+		Actor **neighbours = area->GetAllActorsInRadius(Pos, GA_NO_LOS|GA_NO_DEAD|GA_NO_UNSCHEDULED, GetSafeStat(IE_VISUALRANGE)*VOODOO_SPL_RANGE_F);
+		Actor **poi = neighbours;
+		while (*poi) {
+			core->ApplySpell(modalSpell, *poi, this, 0);
+			poi++;
+		}
+		free(neighbours);
+	} else {
+		core->ApplySpell(modalSpell, this, this, 0);
+	}
 }
 
 //idx could be: 0-6, 16-22, 32-38, 48-54
@@ -8111,9 +8119,9 @@ void Actor::ResolveStringConstant(ieResRef Sound, unsigned int index) const
 void Actor::SetActionButtonRow(ActionButtonRow &ar)
 {
 	for(int i=0;i<GUIBT_COUNT;i++) {
-		PCStats->QSlots[i] = Gemrb2IWD2Qslot(ar[i], i);
+		PCStats->QSlots[i] = ar[i];
 	}
-	dumpQSlots();
+	if (QslotTranslation) dumpQSlots();
 }
 
 void Actor::GetActionButtonRow(ActionButtonRow &ar)
@@ -8269,19 +8277,22 @@ void Actor::SetSoundFolder(const char *soundset)
 
 void Actor::GetSoundFolder(char *soundset, int full, ieResRef overrideSet) const
 {
-	if (!overrideSet) {
-		strncpy(overrideSet, PCStats->SoundSet, 8);
+	ieResRef set;
+	if (overrideSet) {
+		CopyResRef(set, overrideSet);
+	} else {
+		CopyResRef(set, PCStats->SoundSet);
 	}
 
 	if (core->HasFeature(GF_SOUNDFOLDERS)) {
 		strnlwrcpy(soundset, PCStats->SoundFolder, 32);
 		if (full) {
 			strcat(soundset,"/");
-			strncat(soundset, overrideSet, 8);
+			strncat(soundset, set, 8);
 		}
 	}
 	else {
-		strnlwrcpy(soundset, overrideSet, 8);
+		strnlwrcpy(soundset, set, 8);
 	}
 }
 

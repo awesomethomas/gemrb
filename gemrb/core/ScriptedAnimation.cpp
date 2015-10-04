@@ -443,6 +443,8 @@ void ScriptedAnimation::SetSound(int arg, const ieResRef sound)
 
 void ScriptedAnimation::PlayOnce()
 {
+  print("play animation!!!");
+  print("%s", ResName);
 	SequenceFlags&=~IE_VVC_LOOP;
 	for (unsigned int i=0;i<3*MAX_ORIENT;i++) {
 		if (anims[i]) {
@@ -525,8 +527,9 @@ void ScriptedAnimation::SetDelay(ieDword delay)
 
 void ScriptedAnimation::SetDefaultDuration(ieDword duration)
 {
-	if (!(SequenceFlags&(IE_VVC_LOOP|IE_VVC_FREEZE) )) return;
+  //if (!(SequenceFlags&(IE_VVC_LOOP|IE_VVC_FREEZE) )) return;
 	if (Duration==0xffffffff) {
+	  print("setting duration");
 		Duration = duration;
 	}
 	if (twin) {
@@ -551,8 +554,8 @@ void ScriptedAnimation::SetOrientation(int orientation)
 
 bool ScriptedAnimation::HandlePhase(Sprite2D *&frame)
 {
-	unsigned int inc = 0;
 
+	unsigned int inc = 0;
 	if (justCreated) {
 		if (Phase == P_NOTINITED) {
 			Log(ERROR, "ScriptedAnimation", "Not fully initialised VVC!");
@@ -611,6 +614,11 @@ retry:
 		if (core->GetGame()->GameTime>Duration) {
 			Phase++;
 			goto retry;
+		} else if(Duration!=0xffffffff) {
+		  if(anims[Phase*MAX_ORIENT+Orientation]->endReached) {
+		    anims[Phase*MAX_ORIENT+Orientation]->SetPos(0);
+		  }
+		  return false;
 		}
 	}
 	if (SequenceFlags&IE_VVC_FREEZE) {

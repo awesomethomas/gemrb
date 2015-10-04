@@ -362,6 +362,12 @@ Map::Map(void)
 	Background = NULL;
 	BgDuration = 0;
 	LastGoCloser = 0;
+	AreaFlags = AreaType = AreaDifficulty = 0;
+	Rain = Snow = Fog = Lightning = DayNight = 0;
+	trackString = trackFlag = trackDiff = 0;
+	Width = Height = 0;
+	RestHeader.Difficulty = RestHeader.CreatureNum = RestHeader.Maximum = RestHeader.Enabled = 0;
+	RestHeader.DayChance = RestHeader.NightChance = RestHeader.sduration = RestHeader.rwdist = RestHeader.owdist = 0;
 }
 
 Map::~Map(void)
@@ -2380,8 +2386,8 @@ void Map::dump(bool show_actors) const
 		buffer.append("\n");
 		i = actors.size();
 		while (i--) {
-			if (!(actors[i]->GetInternalFlag()&(IF_JUSTDIED|IF_REALLYDIED))) {
-				buffer.appendFormatted("Actor: %s (%d) at %d.%d\n", actors[i]->GetName(1), actors[i]->GetGlobalID(), actors[i]->Pos.x, actors[i]->Pos.y);
+			if (actors[i]->ValidTarget(GA_NO_DEAD|GA_NO_UNSCHEDULED)) {
+				buffer.appendFormatted("Actor: %s (%d %s) at %d.%d\n", actors[i]->GetName(1), actors[i]->GetGlobalID(), actors[i]->GetScriptName(), actors[i]->Pos.x, actors[i]->Pos.y);
 			}
 		}
 	}

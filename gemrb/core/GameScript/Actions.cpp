@@ -2349,6 +2349,11 @@ void GameScript::SetDoorLocked(Scriptable* Sender, Action* parameters)
 	if (tar->Type != ST_DOOR) {
 		return;
 	}
+	// two dialog states in pst (and nothing else) use "FALSE" (yes, quoted)
+	// they're on a critical path so we have to handle this data bug ourselves
+	if (parameters->int0Parameter == -1) {
+		parameters->int0Parameter = 0;
+	}
 	Door* door = ( Door* ) tar;
 	door->SetDoorLocked( parameters->int0Parameter!=0, false);
 }
@@ -3312,7 +3317,7 @@ void GameScript::IncrementGlobalOnce(Scriptable* Sender, Action* parameters)
 	//just a best guess at how the two parameters are changed, and could
 	//well be more complex; the original usage of this function is currently
 	//not well understood (relates to hardcoded alignment changes)
-	SetVariable( Sender, parameters->string0Parameter, parameters->int0Parameter );
+	SetVariable( Sender, parameters->string0Parameter, 1 );
 
 	value = CheckVariable( Sender, parameters->string1Parameter );
 	SetVariable( Sender, parameters->string1Parameter,

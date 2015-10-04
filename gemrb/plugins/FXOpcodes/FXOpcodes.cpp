@@ -832,6 +832,7 @@ static EffectRef fx_pst_jumble_curse_ref = { "JumbleCurse", -1 };  //PST specifi
 static EffectRef fx_deaf_state_iwd2_ref = { "State:DeafnessIWD2", -1 }; //iwd2
 static EffectRef fx_bane_ref = { "Bane", -1 }; //iwd2
 static EffectRef fx_protection_from_animation_ref = { "Protection:Animation", -1 }; //0x128
+static EffectRef fx_change_bardsong_ref = { "ChangeBardSong", -1 };
 
 static void Cleanup()
 {
@@ -1673,16 +1674,16 @@ int fx_lore_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_lore_modifier(%2d): Mod: %d, Type: %d", fx->Opcode, fx->Parameter1, fx->Parameter2);
 
-	ieDword mode = fx->Parameter1, value = fx->Parameter2;
+	ieDword mode = fx->Parameter2, value = fx->Parameter1;
 	if (mode == 2) {
 		//guaranteed identification
 		mode = MOD_ABSOLUTE;
 		value = 100;
 	}
 	if (fx->TimingMode==FX_DURATION_INSTANT_PERMANENT) {
-		target->NewBase(IE_LORE, mode, value);
+		target->NewBase(IE_LORE, value, mode);
 	} else {
-		target->NewStat(IE_LORE, mode, value);
+		target->NewStat(IE_LORE, value, mode);
 	}
 	return FX_PERMANENT;
 }
@@ -3155,6 +3156,13 @@ int fx_set_regenerating_state (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 		fx->Parameter3 = gameTime + AI_UPDATE_TIME;
 		damage = 1;
 		break;
+	}
+
+	// different in iwd2 only?
+	// x hp per 1 round
+	if (fx->Parameter2 == RPD_ROUNDS && core->HasFeature(GF_ENHANCED_EFFECTS)) {
+		damage = fx->Parameter1;
+		fx->Parameter3 = gameTime + core->Time.round_sec*AI_UPDATE_TIME;
 	}
 
 	if (fx->FirstApply) {
@@ -6342,6 +6350,15 @@ int fx_damageluck_modifier (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 int fx_change_bardsong (Scriptable* /*Owner*/, Actor* target, Effect* fx)
 {
 	if(0) print("fx_change_bardsong(%2d): %s", fx->Opcode, fx->Resource);
+	// remove any previous song effects, as they are used with permanent timing
+	unsigned int count = target->fxqueue.CountEffects(fx_change_bardsong_ref, -1, -1, NULL);
+	unsigned int songCount = target->spellbook.GetSpellInfoSize(1<<IE_IWD2_SPELL_SONG);
+	if (count > 0 && songCount > 0) {
+		for (unsigned int i=0; i<songCount; i++) {
+			if (i == fx->Parameter2) continue;
+			target->fxqueue.RemoveAllEffectsWithParam(fx_change_bardsong_ref, i);
+		}
+	}
 	memcpy(target->BardSong, fx->Resource, 8);
 	return FX_APPLIED;
 }

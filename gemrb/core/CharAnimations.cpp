@@ -1914,6 +1914,7 @@ void CharAnimations::AddSixSuffix(char* ResRef, unsigned char StanceID,
 			break;
 
 		case IE_ANI_READY:
+		case IE_ANI_HIDE: //could be wrong
 			strcat( ResRef, "g2" );
 			Cycle = 16 + Orient;
 			break;
@@ -2393,6 +2394,7 @@ void CharAnimations::AddLRSuffix( char* ResRef, unsigned char StanceID,
 			Cycle = 16 + Orient / 2;
 			break;
 		case IE_ANI_WALK:
+		case IE_ANI_HIDE: // unknown, just a guess
 			strcat( ResRef, "g1" );
 			strcpy( EquipData->Suffix, "g1" );
 			Cycle = Orient / 2;
